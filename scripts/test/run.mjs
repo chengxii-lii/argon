@@ -291,6 +291,12 @@ try {
     await sleep(300);
     tabs = await b.background(`chrome.tabs.query({}).then((ts) => ts.map((t) => t.pendingUrl || t.url))`);
     check(tabs.length === 1, 'and that new tab stays put', tabs);
+    // Same in a second window: Ctrl+W never closes a window.
+    const win = await b.background(`chrome.windows.create({ url: 'chrome://newtab/' }).then((w) => w.id)`);
+    await sleep(600);
+    await b.background(`chrome.tabs.query({ windowId: ${win} }).then((ts) => closeTab(ts[0]))`);
+    await sleep(300);
+    check((await b.background(`chrome.tabs.query({ windowId: ${win} }).then((ts) => ts.length)`)) === 1, 'even when another window is open');
   });
 } finally {
   b.close();

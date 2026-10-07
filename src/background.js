@@ -25,12 +25,10 @@ chrome.commands.onCommand.addListener(async (cmd, tab) => {
 // argon's new tab instead, and that one stays put. Every other tab closes as usual.
 async function closeTab(tab) {
   if (!tab) return;
-  const [tabs, windows] = await Promise.all([
-    chrome.tabs.query({ windowId: tab.windowId }),
-    chrome.windows.getAll({ windowTypes: ['normal'] })
-  ]);
-  if (tabs.length > 1 || windows.length > 1) return chrome.tabs.remove(tab.id);
-  if (isBlank(tab.url)) return;
+  // Ctrl+W never closes a window: its last page turns into argon's new tab, and that new tab stays.
+  const [tabs, win] = await Promise.all([chrome.tabs.query({ windowId: tab.windowId }), chrome.windows.get(tab.windowId)]);
+  if (tabs.length > 1 || win.type !== 'normal') return chrome.tabs.remove(tab.id);
+  if (isBlank(tab.pendingUrl || tab.url)) return;
   await chrome.tabs.create({ windowId: tab.windowId, url: 'chrome://newtab/' });
   await chrome.tabs.remove(tab.id);
 }

@@ -94,7 +94,7 @@ Type <kbd>&gt;</kbd> for tab and window commands: pin, mute, duplicate, picture-
 
 ### A calm new tab you can't lose
 
-argon's new tab is just the gradient and a hint. Bind <kbd>Ctrl</kbd> <kbd>W</kbd> to argon and closing your last tab leaves this page instead of quitting the browser.
+argon's new tab is just the gradient and a hint. Bind <kbd>Ctrl</kbd> <kbd>W</kbd> to argon and Ctrl+W never closes a window: the last tab becomes this page, and this page stays.
 
 </td>
 </tr>
@@ -165,7 +165,7 @@ argon has no analytics, no accounts and no servers of its own. Your history is r
 No build step: the folder *is* the extension. The scripts need Node 22+ and, for tests and art, Helium (or any Chromium; set `BROWSER=/path/to/browser`).
 
 ```bash
-npm test         # 51 checks in a real headless browser with argon loaded
+npm test         # 52 checks in a real headless browser with argon loaded
 npm run bangs    # refresh data/bangs.json from Helium's list
 npm run icons    # redraw the icons
 npm run art      # re-render the README's banner, screenshots and demo GIF
