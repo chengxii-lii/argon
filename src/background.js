@@ -69,9 +69,9 @@ async function toggle(tab) {
   try {
     await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, files: [PALETTE_FILE] });
   } catch {
-    // The browser's own pages, the Web Store and PDFs can't be drawn on by any extension. Do what Ctrl+T did
-    // before argon: a new tab, with the address bar ready to type in.
-    chrome.tabs.create({ windowId: tab.windowId, index: tab.index + 1 });
+    // The browser's own pages, the Web Store and PDFs can't be drawn on by any extension: open argon's new tab
+    // next to it instead, palette ready.
+    chrome.tabs.create({ windowId: tab.windowId, index: tab.index + 1, url: NEWTAB + '#palette' });
   }
 }
 

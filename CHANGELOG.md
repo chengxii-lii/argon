@@ -6,7 +6,7 @@
 - **Calculator.** Math like `(3+4)^2/7` shows the answer first; Enter copies it.
 - **New tab.** argon replaces the new tab page with the README's gradient and "Press Ctrl+T to search".
 - **Your last tab stays.** Bind argon's "Close tab" to Ctrl+W and Ctrl+W never closes a window: a window's last page becomes argon's new tab, and that new tab stays put.
-- **No more toolbar drop-down.** Ctrl+T on a blank tab swaps in argon's new tab with the palette open. On pages no extension can draw on, it opens a plain new tab like Ctrl+T always did; in the address bar, it leaves you there.
+- **No more toolbar drop-down.** Ctrl+T on a blank tab swaps in argon's new tab with the palette open. On pages no extension can draw on, it opens argon's new tab next to it, palette open; in the address bar, it leaves you there.
 - **Repo.** 56 checks; new art for commands and the new tab.
 
 ## v1.4

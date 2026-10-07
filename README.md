@@ -147,7 +147,7 @@ Works in any Chromium browser (Chrome, Edge, Brave, Arc). It's made for [Helium]
 ## How it works
 
 - **On the page itself.** argon draws in a closed shadow root in the browser's top layer, so pages can't restyle it and it sits above everything, fullscreen video included. It listens for keys before the page does.
-- **Where it can't draw.** Browser pages and the Web Store don't allow any extension in, so there Ctrl+T opens a plain new tab, address bar ready, like it did before argon. A blank tab gets swapped for argon's new tab with the palette open. If you're typing in the address bar of a page, Ctrl+T leaves you there, since no page can take focus from the address bar.
+- **Where it can't draw.** Browser pages and the Web Store don't allow any extension in, so there Ctrl+T opens argon's new tab next to it, palette open. A blank tab gets swapped for argon's new tab with the palette open. If you're typing in the address bar of a page, Ctrl+T leaves you there, since no page can take focus from the address bar.
 - **Never waiting.** The browser swallows Ctrl+T's key press, but releasing the key still reaches the page, so argon opens the palette right there, without a round trip to its background worker. Meanwhile the tab you're using pings the worker every 20 seconds so it's never asleep, and any letters you type in between carry over into the field.
 - **Bangs, the Helium way.** argon reads the first `!` that starts the text or follows a space, and fills `{searchTerms}` just as Chromium fills a search engine's template. The rules come from [Helium's own patch](https://github.com/imputnet/helium/blob/main/patches/helium/core/add-native-bangs.patch).
 
