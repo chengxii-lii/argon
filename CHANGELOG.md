@@ -2,11 +2,12 @@
 
 ## v1.5
 
-- **Command mode.** Type `>` for tab and window commands: pin, duplicate, mute, reload, close, copy link (plain or Markdown), picture-in-picture, move to new window, reopen closed tab, close others / to the right, unload inactive tabs, zoom, incognito, and Helium's settings pages. Typing a command's name works without the `>` too.
+- **Command mode.** Type `>` or `-` for tab and window commands: pin, duplicate, mute, reload, close, copy link (plain or Markdown), picture-in-picture, move to new window, reopen closed tab, close others / to the right, unload inactive tabs, zoom, incognito, and Helium's settings pages. Typing a command's name works without the `>` too.
 - **Calculator.** Math like `(3+4)^2/7` shows the answer first; Enter copies it.
 - **New tab.** argon replaces the new tab page with the README's gradient and "Press Ctrl+T to search".
 - **Your last tab stays.** Bind argon's "Close tab" to Ctrl+W and Ctrl+W never closes a window: a window's last page becomes argon's new tab, and that new tab stays put.
-- **Repo.** 52 checks; new art for commands and the new tab.
+- **No more toolbar drop-down.** Ctrl+T on a blank tab swaps in argon's new tab with the palette open. On pages no extension can draw on, it opens a plain new tab like Ctrl+T always did; in the address bar, it leaves you there.
+- **Repo.** 56 checks; new art for commands and the new tab.
 
 ## v1.4
 

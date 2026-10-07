@@ -212,6 +212,15 @@ try {
     check(s.rows[0]?.text.startsWith('Unpin Tab'), 'and then offers Unpin Tab', s.rows[0]);
     await p.key('Enter');
     await sleep(300);
+    await openFresh();
+    await p.type('-dupl');
+    s = await p.until((x) => x.rows[0]?.text.startsWith('Duplicate'));
+    check(s.rows[0]?.text.startsWith('Duplicate'), '"-" works the same as ">"', s.rows[0]);
+    await p.clear();
+    await p.type('-5*2');
+    s = await p.until((x) => x.rows[0]?.kind === 'answer');
+    check(s.rows[0]?.kind === 'answer', 'but "-5*2" is still math', kinds(s));
+    await p.key('Escape');
   });
 
   await test('A search that names a command shows it, after Google', async () => {
@@ -257,11 +266,19 @@ try {
     check(!(await p.palette()).open, 'the palette closed');
   });
 
-  await test('The popup (for pages argon can\'t draw on) renders', async () => {
-    const pop = await b.page(`chrome-extension://${b.extensionId}/src/popup.html?tab=1`, { width: 640, height: 480 });
-    const s = await pop.until((x) => x.open && x.rows.length > 0, 3000);
-    check(s.open, 'the palette shows in the popup');
-    await pop.closeTarget();
+  await test('Ctrl+T on a blank tab swaps in argon\'s new tab, palette open', async () => {
+    const id = await b.background(`chrome.tabs.create({ url: 'about:blank' }).then((t) => t.id)`);
+    await sleep(500);
+    await b.background(`chrome.tabs.get(${id}).then(toggle)`);
+    await sleep(800);
+    const tabs = await b.background(`chrome.tabs.query({}).then((ts) => ts.map((t) => ({ id: t.id, url: t.pendingUrl || t.url })))`);
+    check(!tabs.some((t) => t.id === id), 'the blank tab is gone', tabs);
+    check(tabs.some((t) => t.url.endsWith('/src/newtab.html')), 'argon\'s new tab took its place', tabs);
+    const nt = await b.page(`chrome-extension://${b.extensionId}/src/newtab.html#palette`, { mark: false });
+    const s = await nt.until((x) => x.open);
+    check(s.open, 'with the palette open');
+    await nt.closeTarget();
+    await b.background(`chrome.tabs.query({}).then((ts) => chrome.tabs.remove(ts.filter((t) => (t.pendingUrl || t.url).includes('/src/newtab.html')).map((t) => t.id)))`);
   });
 
   await test('argon\'s new tab shows the shortcut, and the palette opens on it', async () => {

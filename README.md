@@ -75,7 +75,7 @@ Pages you already have open come up first and **switch** instead of opening twic
 
 ### Commands, and a calculator
 
-Type <kbd>&gt;</kbd> for tab and window commands: pin, mute, duplicate, picture-in-picture, copy link (or as Markdown), reopen closed tab, close others, zoom, and more. Or just type the command's name. Type math like `(3+4)^2/7` and the answer comes first; Enter copies it.
+Type <kbd>&gt;</kbd> or <kbd>-</kbd> for tab and window commands: pin, mute, duplicate, picture-in-picture, copy link (or as Markdown), reopen closed tab, close others, zoom, and more. Or just type the command's name. Type math like `(3+4)^2/7` and the answer comes first; Enter copies it.
 
 </td>
 <td width="50%" valign="top">
@@ -141,13 +141,13 @@ Works in any Chromium browser (Chrome, Edge, Brave, Arc). It's made for [Helium]
 | <kbd>Alt</kbd> <kbd>Enter</kbd> | Search Google for exactly what you typed |
 | <kbd>→</kbd> | Accept the autofill |
 | <kbd>Shift</kbd> <kbd>Delete</kbd> | Forget the selected past search or page |
-| <kbd>&gt;</kbd> | Commands: pin, mute, duplicate, copy link, reopen closed tab, zoom… |
+| <kbd>&gt;</kbd> or <kbd>-</kbd> | Commands: pin, mute, duplicate, copy link, reopen closed tab, zoom… |
 | <kbd>Esc</kbd> | Close |
 
 ## How it works
 
 - **On the page itself.** argon draws in a closed shadow root in the browser's top layer, so pages can't restyle it and it sits above everything, fullscreen video included. It listens for keys before the page does.
-- **Where it can't draw.** Browser pages, the Web Store and the new tab page don't allow any extension in, so there the palette drops down from the toolbar icon. It does the same if you press Ctrl+T while the address bar has focus, since a page can't take focus from the toolbar.
+- **Where it can't draw.** Browser pages and the Web Store don't allow any extension in, so there Ctrl+T opens a plain new tab, address bar ready, like it did before argon. A blank tab gets swapped for argon's new tab with the palette open. If you're typing in the address bar of a page, Ctrl+T leaves you there, since no page can take focus from the address bar.
 - **Never waiting.** The browser swallows Ctrl+T's key press, but releasing the key still reaches the page, so argon opens the palette right there, without a round trip to its background worker. Meanwhile the tab you're using pings the worker every 20 seconds so it's never asleep, and any letters you type in between carry over into the field.
 - **Bangs, the Helium way.** argon reads the first `!` that starts the text or follows a space, and fills `{searchTerms}` just as Chromium fills a search engine's template. The rules come from [Helium's own patch](https://github.com/imputnet/helium/blob/main/patches/helium/core/add-native-bangs.patch).
 
@@ -165,7 +165,7 @@ argon has no analytics, no accounts and no servers of its own. Your history is r
 No build step: the folder *is* the extension. The scripts need Node 22+ and, for tests and art, Helium (or any Chromium; set `BROWSER=/path/to/browser`).
 
 ```bash
-npm test         # 52 checks in a real headless browser with argon loaded
+npm test         # 56 checks in a real headless browser with argon loaded
 npm run bangs    # refresh data/bangs.json from Helium's list
 npm run icons    # redraw the icons
 npm run art      # re-render the README's banner, screenshots and demo GIF

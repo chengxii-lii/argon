@@ -2,7 +2,6 @@
 // Google suggestions and opens whatever you pick.
 
 const PALETTE_FILE = 'src/palette.js';
-const POPUP = 'src/popup.html';
 const BANGS_URL = 'https://services.helium.imput.net/bangs.json'; // the same list Helium's address bar uses
 const BANGS_MAX_AGE = 3 * 24 * 3600e3;
 const DAY = 24 * 3600e3;
@@ -49,38 +48,30 @@ async function saveShortcut() {
 }
 saveShortcut();
 
-// The toolbar popup (used on pages no extension can draw on) keeps a port open, so a second Ctrl+T closes it.
-const popups = new Set();
-chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'popup') return;
-  popups.add(port);
-  port.onDisconnect.addListener(() => popups.delete(port));
-});
-
 async function toggle(tab) {
   if (!tab) return;
-  if (popups.size) return popups.forEach((p) => p.postMessage({ type: 'close' }));
 
   // Already in the page (it's loaded on every page as it starts): just toggle it. Nothing else runs first.
   const reply = await chrome.tabs.sendMessage(tab.id, { type: 'toggle' }, { frameId: 0 }).catch(() => null);
   warm(); // load history while you start typing
   if (reply === 'ok') return;
 
-  // Pages opened before argon was installed or updated don't have it yet: inject it, and it opens itself.
-  if (reply !== 'nofocus') {
-    try {
-      const [res] = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, files: [PALETTE_FILE] });
-      if (res?.result === true) return;
-    } catch { /* the browser's own pages, the Web Store and PDFs can't be drawn on by any extension */ }
+  // A blank tab the browser opened keeps the keyboard in the address bar, where no page can reach it. Nothing to
+  // lose there, so swap it for argon's new tab opened by its own address, which does get the keyboard, palette open.
+  if (isBlank(tab.pendingUrl || tab.url)) {
+    await chrome.tabs.create({ windowId: tab.windowId, index: tab.index, pinned: tab.pinned, url: NEWTAB + '#palette' });
+    return chrome.tabs.remove(tab.id).catch(() => {});
   }
+  // You're typing in the address bar (or other browser UI) of a real page: stay there.
+  if (reply === 'nofocus') return;
 
-  // Drop the palette down from the toolbar instead. Also used when focus is in the address bar, since no page
-  // can take keyboard focus from there.
-  await chrome.action.setPopup({ tabId: tab.id, popup: `${POPUP}?tab=${tab.id}` });
+  // Pages opened before argon was installed or updated don't have it yet: inject it, and it opens itself.
   try {
-    await chrome.action.openPopup({ windowId: tab.windowId });
-  } catch { /* window not focused */ } finally {
-    chrome.action.setPopup({ tabId: tab.id, popup: '' }); // clicking the icon goes back to the normal palette
+    await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, files: [PALETTE_FILE] });
+  } catch {
+    // The browser's own pages, the Web Store and PDFs can't be drawn on by any extension. Do what Ctrl+T did
+    // before argon: a new tab, with the address bar ready to type in.
+    chrome.tabs.create({ windowId: tab.windowId, index: tab.index + 1 });
   }
 }
 
@@ -135,7 +126,7 @@ async function open(url, mode = 'new', tabId) {
 
 // ---------- Commands ----------
 
-// Typing ">" lists these; a search that clearly names one ("dupl") shows it too. `tab` commands act on the tab
+// Typing ">" or "-" lists these; a search that clearly names one ("dupl") shows it too. `tab` commands act on the tab
 // the palette was opened on, and need a real page there. `page` commands run in the page itself (they need the
 // keypress that ran them: copying, picture-in-picture), so the palette runs those without a round trip.
 const COMMANDS = [
@@ -461,8 +452,8 @@ async function query(raw, tabId) {
   if (!trimmed) return recent(tabId);
   const here = () => (tabId != null ? chrome.tabs.get(tabId).catch(() => null) : null);
 
-  // Command mode: ">" lists everything argon can do to this tab and the browser.
-  if (trimmed.startsWith('>')) return commandRows(trimmed.slice(1), await here());
+  // Command mode: ">" or "-" lists everything argon can do to this tab and the browser ("-5*2" is still math).
+  if (/^(>|-(?![\d.(]))/.test(trimmed)) return commandRows(trimmed.slice(1), await here());
 
   // !bangs, exactly like Helium's address bar: "!yt cats", "cats !yt", or a bang being typed.
   const bang = await bangRows(q);

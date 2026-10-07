@@ -1,21 +1,19 @@
 // argon's command palette. Loaded into every page as it starts (so Ctrl+T opens it instantly), injected into
-// pages that were open before argon was installed, and run by popup.html on pages no extension can draw on.
+// pages that were open before argon was installed, and run by argon's own new tab page.
 (() => {
   const old = window.__argon;
   if (old) {
     if (old.alive()) return old.toggle();
     old.destroy(); // a copy left over from before argon was reloaded can't reach argon anymore
   }
+  // ">" or "-" starts command mode (but "-5*2" is still math).
+  const COMMAND_MODE = /^(>|-(?![\d.(]))/;
   const alive = () => { try { return !!chrome.runtime?.id; } catch { return false; } };
-
-  // The toolbar popup draws the palette as the whole window. argon's new tab page draws it like any page.
-  const IN_POPUP = location.protocol === 'chrome-extension:' && location.pathname.endsWith('/popup.html');
-  const POPUP_TAB = IN_POPUP ? Number(new URLSearchParams(location.search).get('tab')) || undefined : undefined;
 
   const send = (msg) => new Promise((resolve) => {
     if (!alive()) return resolve(null);
     try {
-      chrome.runtime.sendMessage(POPUP_TAB ? { ...msg, tabId: POPUP_TAB } : msg, (r) => {
+      chrome.runtime.sendMessage(msg, (r) => {
         void chrome.runtime.lastError;
         resolve(r ?? null);
       });
@@ -129,12 +127,6 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
   font-size: 13px; font-weight: 500; white-space: nowrap; }
 .root.toasting .backdrop, .root.toasting .panel { display: none; }
 .root.toasting .toast { display: block; }
-
-/* The toolbar popup: no backdrop, the panel is the whole window. */
-.root.popup .panel { position: static; transform: none; width: 640px; height: auto; border-radius: 0; box-shadow: none;
-  background: var(--panel-solid); backdrop-filter: none; }
-.root.popup .list { flex: none; }
-.root.popup .list:empty { display: none; }
 `;
 
   // ---------- DOM ----------
@@ -151,9 +143,9 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
   const sheet = document.createElement('style');
   sheet.textContent = CSS;
   const root = document.createElement('div');
-  root.className = 'root' + (IN_POPUP ? ' popup' : '');
+  root.className = 'root';
   root.innerHTML = `
-    ${IN_POPUP ? '' : '<div class="backdrop"></div>'}
+    <div class="backdrop"></div>
     <div class="panel" role="dialog" aria-label="Search">
       <label class="field">${ICON.search}<input type="text" spellcheck="false" autocomplete="off" autocapitalize="off"
         placeholder="Search, or type > for commands" aria-autocomplete="both" aria-controls="argon-list" role="combobox" aria-expanded="true"></label>
@@ -271,10 +263,10 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
 
   // History first, then the Google search, then Google's suggestions (minus anything already listed).
   function merge() {
-    // Picture-in-picture only where there's a video to float (and never from the toolbar popup).
-    const usable = local.filter((r) => r.id !== 'pip' || (!IN_POPUP && document.querySelector('video')));
+    // Picture-in-picture only where there's a video to float.
+    const usable = local.filter((r) => r.id !== 'pip' || document.querySelector('video'));
     // Command mode lists every command; the list scrolls.
-    if (typed.trim().startsWith('>')) return usable;
+    if (COMMAND_MODE.test(typed.trim())) return usable;
     const seen = new Set(usable.map((r) => (r.kind === 'url' || r.kind === 'page' || r.kind === 'tab' ? 'u:' + r.url.replace(/\/$/, '')
       : r.kind === 'answer' ? 'a' : 's:' + r.title.toLowerCase())));
     const extra = remote.filter((r) => {
@@ -483,17 +475,17 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
   // Registered on the window before the page's own listeners (argon loads as the page starts), so pages with
   // single-key shortcuts (YouTube, GitHub, Gmail) never see what you type into the palette.
   function onKey(e) {
-    if (!IN_POPUP) watchShortcut(e);
+    watchShortcut(e);
     if (!isOpen) return;
     // Esc always closes, even if the page managed to pull focus away from the palette.
     if (e.key === 'Escape' && e.type === 'keydown' && !e.isComposing) {
       e.preventDefault();
-      if (!IN_POPUP) e.stopImmediatePropagation();
+      e.stopImmediatePropagation();
       return close(false);
     }
-    if (!IN_POPUP && !e.composedPath().includes(host)) return;
+    if (!e.composedPath().includes(host)) return;
     if (e.type === 'keydown') handleKey(e);
-    if (!IN_POPUP) e.stopImmediatePropagation();
+    e.stopImmediatePropagation();
   }
 
   function handleKey(e) {
@@ -540,7 +532,7 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
   input.addEventListener('input', onInput);
   // Some pages pull focus back to themselves; keep it in the palette while it's open.
   input.addEventListener('blur', () => {
-    if (isOpen && !IN_POPUP && document.hasFocus()) requestAnimationFrame(() => isOpen && input.focus({ preventScroll: true }));
+    if (isOpen && document.hasFocus()) requestAnimationFrame(() => isOpen && input.focus({ preventScroll: true }));
   });
 
   // ---------- Open / close ----------
@@ -553,13 +545,11 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
     if (isOpen) return;
     isOpen = true;
     hide(); // a note from the last copy goes away
-    if (!IN_POPUP) {
-      lastFocus = document.activeElement;
-      attach();
-      host.style.setProperty('display', 'block', 'important');
-      // The top layer puts the palette above everything, even fullscreen videos and the page's own dialogs.
-      try { host.popover = 'manual'; host.showPopover(); } catch { /* still on top via z-index */ }
-    }
+    lastFocus = document.activeElement;
+    attach();
+    host.style.setProperty('display', 'block', 'important');
+    // The top layer puts the palette above everything, even fullscreen videos and the page's own dialogs.
+    try { host.popover = 'manual'; host.showPopover(); } catch { /* still on top via z-index */ }
     // Anything you already typed after the shortcut carries over into the field.
     const seed = performance.now() - modDownAt < 1500 ? early.join('') : '';
     early = [];
@@ -579,7 +569,6 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
     if (!isOpen) return;
     isOpen = false;
     seq++;
-    if (IN_POPUP) return window.close();
     if (note) {
       root.classList.add('toasting');
       toastEl.textContent = note;
@@ -604,19 +593,18 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
   }
 
   // Returns false when the page doesn't have keyboard focus (you pressed Ctrl+T in the address bar): no page can
-  // take focus from the browser's toolbar, so argon drops the palette from the toolbar icon instead.
+  // take focus from the browser's toolbar, so the address bar keeps it.
   function toggle() {
     lastToggle = performance.now();
     if (isOpen) { close(false); return true; }
-    if (!IN_POPUP && !document.hasFocus()) return false;
+    if (!document.hasFocus()) return false;
     open();
     return true;
   }
 
   // ---------- Wiring ----------
 
-  const target = IN_POPUP ? document : window;
-  for (const type of ['keydown', 'keyup', 'keypress']) target.addEventListener(type, onKey, true);
+  for (const type of ['keydown', 'keyup', 'keypress']) addEventListener(type, onKey, true);
 
   function onMessage(msg, _sender, reply) {
     if (msg?.type !== 'toggle') return;
@@ -627,36 +615,32 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
     }
     reply(toggle() ? 'ok' : 'nofocus');
   }
-  if (!IN_POPUP) chrome.runtime.onMessage.addListener(onMessage);
+  chrome.runtime.onMessage.addListener(onMessage);
 
   // Which shortcut to watch for (argon's background keeps it in storage).
   function onStorage(changes, area) {
     if (area === 'local' && changes.shortcut) shortcut = parseShortcut(changes.shortcut.newValue);
   }
-  if (!IN_POPUP) {
-    try {
-      chrome.storage.local.get('shortcut', (r) => { void chrome.runtime.lastError; shortcut = parseShortcut(r?.shortcut); });
-      chrome.storage.onChanged.addListener(onStorage);
-    } catch { /* disconnected */ }
-  }
+  try {
+    chrome.storage.local.get('shortcut', (r) => { void chrome.runtime.lastError; shortcut = parseShortcut(r?.shortcut); });
+    chrome.storage.onChanged.addListener(onStorage);
+  } catch { /* disconnected */ }
 
   // Keep argon's background awake while you're using this tab, so Ctrl+T never waits on it starting up.
   // Only the tab you're looking at does this: one tiny message every 20 seconds.
   function ping() {
     if (document.visibilityState === 'visible' && document.hasFocus()) send({ type: 'ping' });
   }
-  const pinger = IN_POPUP ? 0 : setInterval(ping, 20e3);
-  if (!IN_POPUP) {
-    addEventListener('focus', ping);
-    ping();
-  }
+  const pinger = setInterval(ping, 20e3);
+  addEventListener('focus', ping);
+  ping();
 
   // Going back to a page from the back/forward cache shouldn't bring the palette back with it.
   addEventListener('pagehide', () => close(true));
 
   function destroy() {
     close(true);
-    for (const type of ['keydown', 'keyup', 'keypress']) target.removeEventListener(type, onKey, true);
+    for (const type of ['keydown', 'keyup', 'keypress']) removeEventListener(type, onKey, true);
     clearInterval(pinger);
     removeEventListener('focus', ping);
     try {
@@ -669,14 +653,9 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
   window.__argon = { alive, destroy, toggle };
   document.querySelectorAll?.('argon-palette').forEach((el) => el !== host && el.remove());
 
-  if (IN_POPUP) {
-    document.body.append(host);
-    host.style.setProperty('position', 'static', 'important');
-    host.style.setProperty('width', 'auto', 'important');
-    host.style.setProperty('height', 'auto', 'important');
-    host.style.setProperty('display', 'block', 'important');
-    // A second Ctrl+T closes the popup.
-    chrome.runtime.connect({ name: 'popup' }).onMessage.addListener((m) => m.type === 'close' && window.close());
+  // argon's new tab, opened by Ctrl+T in place of a blank tab the keyboard couldn't reach: open right away.
+  if (location.protocol === 'chrome-extension:' && location.hash === '#palette') {
+    history.replaceState(null, '', location.pathname);
     open();
     return true;
   }
