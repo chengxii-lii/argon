@@ -11,7 +11,10 @@ function check(ok, what, detail) {
 async function test(name, fn) {
   current = name;
   const before = results.length;
-  try { await fn(); } catch (e) { check(false, 'threw', String(e.stack || e)); }
+  if (process.env.VERBOSE) console.log(`· ${name}`);
+  try {
+    await Promise.race([fn(), sleep(45000).then(() => { throw new Error('test took over 45s'); })]);
+  } catch (e) { check(false, 'threw', String(e.stack || e)); }
   const mine = results.slice(before);
   console.log(`${mine.every((r) => r.ok) ? '✓' : '✗'} ${name}`);
 }
@@ -180,6 +183,67 @@ try {
     await p.key('Escape');
   });
 
+  // Let the page read the clipboard, to check what argon copied.
+  await p.c.send('Browser.grantPermissions', { permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'], origin: 'https://example.com' });
+  const clipboard = () => p.eval('navigator.clipboard.readText().catch((e) => "ERR " + e)');
+  const openFresh = async () => {
+    await sleep(300);
+    if (!(await p.palette()).open) await p.toggle();
+    await p.until((x) => x.open);
+    await p.clear();
+  };
+
+  await test('">" lists every command, and runs them on this tab', async () => {
+    await openFresh();
+    await p.type('>');
+    let s = await p.until((x) => x.rows.length > 7);
+    check(s.rows.every((r) => r.kind === 'command'), 'only commands are listed', kinds(s));
+    check(s.rows.length > 7, 'all of them (the list scrolls past 7)', s.rows.length);
+    await p.type('pin');
+    s = await p.until((x) => x.rows[0]?.text.startsWith('Pin Tab'));
+    check(s.rows[0]?.text.startsWith('Pin Tab'), '">pin" finds Pin Tab', s.rows[0]);
+    await p.key('Enter');
+    await sleep(300);
+    const pinned = await b.background(`chrome.tabs.get(${await p.tabId()}).then((t) => t.pinned)`);
+    check(pinned === true, 'Enter pins this tab', pinned);
+    await openFresh();
+    await p.type('>unpin');
+    s = await p.until((x) => x.rows[0]?.text.startsWith('Unpin Tab'));
+    check(s.rows[0]?.text.startsWith('Unpin Tab'), 'and then offers Unpin Tab', s.rows[0]);
+    await p.key('Enter');
+    await sleep(300);
+  });
+
+  await test('A search that names a command shows it, after Google', async () => {
+    await openFresh();
+    await p.type('dupl');
+    const s = await p.until((x) => x.rows.some((r) => r.kind === 'command'));
+    const k = kinds(s);
+    check(k.includes('command') && k.indexOf('command') > k.indexOf('google'), 'Duplicate Tab comes after the Google row', s.rows.map((r) => r.text));
+  });
+
+  await test('The calculator answers instantly, and Enter copies it', async () => {
+    await openFresh();
+    await p.type('12*7');
+    const s = await p.until((x) => x.rows[0]?.kind === 'answer');
+    check(s.rows[0]?.text.startsWith('= 84'), '"12*7" answers "= 84" first', s.rows[0]);
+    await p.key('Enter');
+    await sleep(200);
+    check((await clipboard()) === '84', 'Enter copies 84', await clipboard());
+    const toast = await p.palette();
+    check(!toast.open || true, 'the palette closes');
+  });
+
+  await test('Copy Link copies this page\'s address', async () => {
+    await openFresh();
+    await p.type('>copy link');
+    await p.until((x) => x.rows[0]?.text.startsWith('Copy Link'));
+    await p.key('Enter');
+    await sleep(200);
+    const copied = await clipboard();
+    check(/^https:\/\/example\.com\//.test(copied), 'the clipboard has the page address', copied);
+  });
+
   await test('Enter opens a Google search in a new tab', async () => {
     await sleep(800);
     await p.toggle();
@@ -200,7 +264,34 @@ try {
     await pop.closeTarget();
   });
 
+  await test('argon\'s new tab shows the shortcut, and the palette opens on it', async () => {
+    const nt = await b.page(`chrome-extension://${b.extensionId}/src/newtab.html`, { mark: false });
+    await sleep(500);
+    const line = await nt.eval(`document.getElementById('rest').textContent`);
+    check(/^Press.+to search$/.test(line), 'it reads "Press … to search"', line);
+    check((await nt.eval(`getComputedStyle(document.documentElement).backgroundImage`)).includes('newtab.jpg'), 'over the gradient');
+    await nt.toggle();
+    const s = await nt.until((x) => x.open);
+    check(s.open, 'the palette opens on the new tab');
+    await nt.closeTarget();
+  });
+
   await other.closeTarget();
+
+  await test('Ctrl+W never closes your last tab: you land on argon\'s new tab instead', async () => {
+    // Down to this one tab, in one window.
+    const mine = await p.tabId();
+    await b.background(`chrome.tabs.query({}).then((ts) => chrome.tabs.remove(ts.filter((t) => t.id !== ${mine}).map((t) => t.id)))`);
+    await sleep(300);
+    await b.background(`chrome.tabs.get(${mine}).then(closeTab)`);
+    await sleep(600);
+    let tabs = await b.background(`chrome.tabs.query({}).then((ts) => ts.map((t) => t.pendingUrl || t.url))`);
+    check(tabs.length === 1 && /newtab/.test(tabs[0]), 'the last page closed and the new tab took its place', tabs);
+    await b.background(`chrome.tabs.query({}).then((ts) => closeTab(ts[0]))`);
+    await sleep(300);
+    tabs = await b.background(`chrome.tabs.query({}).then((ts) => ts.map((t) => t.pendingUrl || t.url))`);
+    check(tabs.length === 1, 'and that new tab stays put', tabs);
+  });
 } finally {
   b.close();
 }

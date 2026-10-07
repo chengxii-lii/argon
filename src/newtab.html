@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>New Tab</title>
+<style>
+  @font-face { font-family: Geist; src: url(assets/geist.woff2) format('woff2'); font-weight: 400 600; font-display: block; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  /* The gradient from argon's README, rendered once with ShaderGradient: a picture, so new tabs cost nothing. */
+  html { background: #0b1450 url(assets/newtab.jpg) center / cover no-repeat; color-scheme: dark; }
+  body {
+    display: grid; place-items: center; color: #fff; user-select: none; cursor: default;
+    font: 450 28px/1 Geist, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", sans-serif;
+    letter-spacing: -0.02em; -webkit-font-smoothing: antialiased;
+  }
+  .rest { display: flex; align-items: center; gap: 12px; margin: 0; text-shadow: 0 4px 30px rgba(10, 20, 80, 0.35); }
+  .rest:empty { visibility: hidden; }
+  kbd {
+    font: 500 20px/1 Geist, system-ui, sans-serif; padding: 10px 14px; border-radius: 11px;
+    background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 2px 0 rgba(255, 255, 255, 0.12) inset, 0 8px 24px rgba(10, 20, 80, 0.25);
+  }
+  kbd + kbd { margin-left: -4px; }
+</style>
+</head>
+<body>
+<p class="rest" id="rest"></p>
+<script src="newtab.js"></script>
+<script src="palette.js"></script>
+</body>
+</html>

@@ -37,46 +37,77 @@ class Connection {
     };
   }
   ready() { return new Promise((r) => (this.ws.readyState === 1 ? r() : (this.ws.onopen = r))); }
-  send(method, params = {}, sessionId) {
+  send(method, params = {}, sessionId, timeout = 20000) {
     const id = ++this.id;
     this.ws.send(JSON.stringify({ id, method, params, sessionId }));
-    return new Promise((resolve, reject) => this.pending.set(id, (d) => (d.error ? reject(new Error(`${method}: ${d.error.message}`)) : resolve(d.result))));
+    return new Promise((resolve, reject) => {
+      // Nothing should take this long; failing beats hanging the whole run.
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`${method}: no answer in ${timeout / 1000}s`)); }, timeout);
+      this.pending.set(id, (d) => {
+        clearTimeout(timer);
+        d.error ? reject(new Error(`${method}: ${d.error.message}`)) : resolve(d.result);
+      });
+    });
   }
 }
 
-export async function launch({ port = 9340, gpu = false, args = [] } = {}) {
+export async function launch({ gpu = false, args = [] } = {}) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'argon-test-'));
   const proc = spawn(findBrowser(), [
-    '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
+    // Port 0: the browser picks a free port, so a leftover browser from an earlier run can never answer instead.
+    '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
     `--load-extension=${ROOT}`, `--disable-extensions-except=${ROOT}`,
     '--disable-features=DisableLoadExtensionCommandLineSwitch', '--no-first-run', '--no-default-browser-check',
     '--hide-scrollbars', ...(gpu ? ['--enable-gpu', '--use-angle=d3d11', '--ignore-gpu-blocklist'] : []), ...args, 'about:blank'
   ], { stdio: 'ignore' });
+  // If this run is stopped early, take the browser down with it.
+  const kill = () => { try { proc.kill(); } catch { /* already gone */ } };
+  process.once('exit', kill);
+  for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, () => { kill(); process.exit(130); });
 
   let version;
-  for (let i = 0; i < 60 && !version; i++) {
-    try { version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); } catch { await sleep(200); }
+  for (let i = 0; i < 75 && !version; i++) {
+    try {
+      const port = fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8').split(/\r?\n/)[0].trim();
+      version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+    } catch { await sleep(200); }
   }
   if (!version) throw new Error('The browser did not start.');
   const c = new Connection(version.webSocketDebuggerUrl);
   await c.ready();
 
-  // argon's background worker.
-  let sw;
-  for (let i = 0; i < 50 && !sw; i++) {
-    const { targetInfos } = await c.send('Target.getTargets');
-    sw = targetInfos.find((t) => t.type === 'service_worker' && t.url.endsWith('/src/background.js'));
-    if (!sw) await sleep(200);
+  // argon's background worker. Right after install the browser can swap it for a fresh one, so if it stops
+  // answering, find the current one and try again.
+  let swSession = null;
+  let extensionId = null;
+  async function attachWorker() {
+    for (let i = 0; i < 50; i++) {
+      const { targetInfos } = await c.send('Target.getTargets');
+      const sw = targetInfos.find((t) => t.type === 'service_worker' && t.url.endsWith('/src/background.js'));
+      if (sw) {
+        extensionId = new URL(sw.url).host;
+        swSession = (await c.send('Target.attachToTarget', { targetId: sw.targetId, flatten: true })).sessionId;
+        return;
+      }
+      await sleep(200);
+    }
+    throw new Error('argon did not load.');
   }
-  if (!sw) throw new Error('argon did not load.');
-  const { sessionId: swSession } = await c.send('Target.attachToTarget', { targetId: sw.targetId, flatten: true });
-  const extensionId = new URL(sw.url).host;
+  await attachWorker();
 
   async function background(expression) {
-    const r = await c.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, swSession);
-    if (r.exceptionDetails) throw new Error('background: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text));
-    return r.result.value;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const r = await c.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, swSession, 8000);
+        if (r.exceptionDetails) throw new Error('background: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text));
+        return r.result.value;
+      } catch (e) {
+        if (attempt >= 2 || /^background:/.test(e.message)) throw e;
+        await attachWorker();
+      }
+    }
   }
+  await background('1'); // settled and answering
 
   let pages = 0;
   async function page(url, { width = 1280, height = 800, scheme = 'dark', scale = 1, mark = true } = {}) {
@@ -89,9 +120,14 @@ export async function launch({ port = 9340, gpu = false, args = [] } = {}) {
     await c.send('Emulation.setFocusEmulationEnabled', { enabled: true }, s);
     await c.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: scale, mobile: false }, s);
     await c.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, s);
-    await c.send('Page.navigate', { url }, s);
+    // A brand-new tab is still settling into its first blank page, which can abort a navigation: try again.
+    for (let i = 0; i < 5; i++) {
+      const nav = await c.send('Page.navigate', { url }, s);
+      if (!nav.errorText) break;
+      await sleep(300);
+    }
     const pg = new Page(c, s, targetId, background, marker);
-    await pg.loaded();
+    if (url !== 'about:blank') await pg.loaded(url);
     return pg;
   }
 
@@ -110,11 +146,14 @@ export class Page {
   constructor(c, session, targetId, background, marker) { Object.assign(this, { c, s: session, targetId, background, marker }); }
   send(method, params) { return this.c.send(method, params, this.s); }
 
-  // Wait for the page (and argon's content script, which loads as it starts) to be ready.
-  async loaded(timeout = 15000) {
+  // Wait for the page (and argon's content script, which loads as it starts) to be ready. Right after navigating,
+  // the old about:blank is still there and already "complete", so also wait for the new address.
+  async loaded(url, timeout = 15000) {
     const end = Date.now() + timeout;
+    const host = new URL(url).host;
     while (Date.now() < end) {
-      if ((await this.eval('document.readyState').catch(() => null)) === 'complete') return true;
+      const [state, at] = (await this.eval('[document.readyState, location.host]').catch(() => null)) || [];
+      if (state === 'complete' && at === host) return true;
       await sleep(100);
     }
     return false;
@@ -155,6 +194,8 @@ export class Page {
         inPalette = true;
         out.open = !/display:\s*none/.test(attrs[attrs.indexOf('style') + 1] || '');
       }
+      // Showing only a "Copied" note isn't open.
+      if (inPalette && /\broot\b/.test(cls) && /\btoasting\b/.test(cls)) out.open = false;
       if (inPalette && n.nodeName === 'INPUT') out.inputId = n.backendNodeId;
       if (inPalette && n.nodeName === 'LI') {
         if (/\bsel\b/.test(cls)) out.sel = out.rows.length;

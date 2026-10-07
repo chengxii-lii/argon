@@ -1,7 +1,7 @@
 // Renders argon's README art into .github/assets: a ShaderGradient banner, screenshots of the real palette over
 // the gradient, and a demo GIF. Run with `npm run art` (installs this folder's dependencies first).
 //
-//   node scripts/art/render.mjs [banner] [shots] [demo]   (default: all three)
+//   node scripts/art/render.mjs [newtab] [banner] [shots] [demo]   (default: all)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,7 +35,7 @@ const server = http.createServer((req, res) => {
 }).listen(PORT);
 const scene = (query) => `http://localhost:${PORT}/?${query}`;
 
-const b = await launch({ port: 9342, gpu: true }); // WebGL needs the real GPU; the software renderer draws nothing
+const b = await launch({ gpu: true }); // WebGL needs the real GPU; the software renderer draws nothing
 try {
   // A believable history: real visits (so pages have titles), sites you return to, and past searches.
   const visit = await b.page('about:blank', { mark: false });
@@ -53,6 +53,15 @@ try {
       await add('https://www.google.com/search?q=' + encodeURIComponent(q).replace(/%20/g, '+'));
     index = null; indexing = null; await warm(); return true;
   })()`);
+
+  // argon's new tab page background: the banner's gradient without the wordmark, sized for big screens.
+  if (doing('newtab')) {
+    const p = await b.page(scene('t=2.4'), { width: 1280, height: 720, scale: 2, mark: false });
+    await sleep(5000);
+    await p.screenshot(path.join(ROOT, 'src', 'assets', 'newtab.jpg'), { quality: 70 });
+    await p.closeTarget();
+    console.log('src/assets/newtab.jpg');
+  }
 
   if (doing('banner')) {
     const p = await b.page(scene('mode=banner&t=2.4'), { width: 1280, height: 640, scale: WIDTH / 1280, mark: false });
@@ -84,6 +93,15 @@ try {
     await shot('tabs.jpg', 'argon', { gradient: 't=1.8' });
     for (const t of tabs) await t.closeTarget();
     await shot('bangs.jpg', '!yt lofi', { gradient: 't=1.2' });
+    await shot('commands.jpg', '>', { gradient: 't=3.0' });
+    // argon's own new tab page, as you'd see it.
+    const nt = await b.page(`chrome-extension://${b.extensionId}/src/newtab.html`, { width: 1440, height: 820, scale: WIDTH / 1440, mark: false });
+    await b.background(`chrome.storage.local.set({ shortcut: 'Ctrl+T' })`);
+    await nt.eval(`(() => { const l = document.getElementById('rest'); l.replaceChildren('Press', ...['Ctrl', 'T'].map((k) => Object.assign(document.createElement('kbd'), { textContent: k })), 'to search'); return 1; })()`);
+    await sleep(800);
+    await nt.screenshot(path.join(OUT, 'newtab.jpg'), { quality: 86 });
+    await nt.closeTarget();
+    console.log('newtab.jpg');
     await shot('light.jpg', 'helium', { scheme: 'light', gradient: 't=2.4&c1=%235b75ee&c2=%23b8c6ff&c3=%233450d1&b=0.95' });
   }
 
@@ -125,6 +143,8 @@ async function demo() {
   await typeOut('!yt lofi', 1300);
   await p.clear();
   await typeOut('you', 1300);
+  await p.clear();
+  await typeOut('>mu', 1300);
   await p.key('Escape');
   await frame(900);
   await p.closeTarget();

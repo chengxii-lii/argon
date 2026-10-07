@@ -73,6 +73,34 @@ Pages you already have open come up first and **switch** instead of opening twic
 <tr>
 <td width="50%" valign="top">
 
+### Commands, and a calculator
+
+Type <kbd>&gt;</kbd> for tab and window commands: pin, mute, duplicate, picture-in-picture, copy link (or as Markdown), reopen closed tab, close others, zoom, and more. Or just type the command's name. Type math like `(3+4)^2/7` and the answer comes first; Enter copies it.
+
+</td>
+<td width="50%" valign="top">
+
+<img src=".github/assets/commands.jpg" alt="Typing '>' lists commands like Pin Tab, Duplicate Tab and Mute Tab">
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+<img src=".github/assets/newtab.jpg" alt="argon's new tab: 'Press Ctrl T to search' over a blue gradient">
+
+</td>
+<td width="50%" valign="top">
+
+### A calm new tab you can't lose
+
+argon's new tab is just the gradient and a hint. Bind <kbd>Ctrl</kbd> <kbd>W</kbd> to argon and closing your last tab leaves this page instead of quitting the browser.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
 ### Fast, and out of your way
 
 - Opens in about 10 ms, with no animations, and never waits on a sleeping background worker
@@ -97,6 +125,8 @@ Pages you already have open come up first and **switch** instead of opening twic
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick the folder.
 3. Open `chrome://extensions/shortcuts` and set argon's **Open the palette** to <kbd>Ctrl</kbd> <kbd>T</kbd>.<br>
    <sub>Browsers don't let an extension take Ctrl+T on its own. If another extension already uses it, clear that one first.</sub>
+4. Optional: set **Close tab, but never your last one** to <kbd>Ctrl</kbd> <kbd>W</kbd>.<br>
+   <sub>Closing a tab with its &times; button can't be caught by an extension, so that one still can close the window.</sub>
 
 Works in any Chromium browser (Chrome, Edge, Brave, Arc). It's made for [Helium](https://helium.computer).
 
@@ -111,6 +141,7 @@ Works in any Chromium browser (Chrome, Edge, Brave, Arc). It's made for [Helium]
 | <kbd>Alt</kbd> <kbd>Enter</kbd> | Search Google for exactly what you typed |
 | <kbd>→</kbd> | Accept the autofill |
 | <kbd>Shift</kbd> <kbd>Delete</kbd> | Forget the selected past search or page |
+| <kbd>&gt;</kbd> | Commands: pin, mute, duplicate, copy link, reopen closed tab, zoom… |
 | <kbd>Esc</kbd> | Close |
 
 ## How it works
@@ -134,7 +165,7 @@ argon has no analytics, no accounts and no servers of its own. Your history is r
 No build step: the folder *is* the extension. The scripts need Node 22+ and, for tests and art, Helium (or any Chromium; set `BROWSER=/path/to/browser`).
 
 ```bash
-npm test         # 36 checks in a real headless browser with argon loaded
+npm test         # 51 checks in a real headless browser with argon loaded
 npm run bangs    # refresh data/bangs.json from Helium's list
 npm run icons    # redraw the icons
 npm run art      # re-render the README's banner, screenshots and demo GIF
@@ -145,7 +176,8 @@ A [weekly workflow](.github/workflows/bangs.yml) opens a pull request whenever H
 ## Credits
 
 - [Helium](https://github.com/imputnet/helium) by imput, for the browser and its bang list, which builds on [Kagi's bangs](https://github.com/kagisearch/bangs) (MIT)
-- [ShaderGradient](https://shadergradient.co), for the gradients in this README
+- [ShaderGradient](https://shadergradient.co), for the gradients in this README and on the new tab
+- [Geist](https://vercel.com/font) by Vercel, the new tab's font (SIL OFL 1.1)
 
 ## License
 

@@ -7,17 +7,33 @@ const BANGS_URL = 'https://services.helium.imput.net/bangs.json'; // the same li
 const BANGS_MAX_AGE = 3 * 24 * 3600e3;
 const DAY = 24 * 3600e3;
 
+const NEWTAB = chrome.runtime.getURL('src/newtab.html');
 const isBlank = (url = '') =>
-  /^(chrome|edge|brave|helium):\/\/(newtab|new-tab-page)\b/.test(url) || url === 'about:blank' || url === '';
+  /^(chrome|edge|brave|helium):\/\/(newtab|new-tab-page)\b/.test(url) || url === 'about:blank' || url === '' || url.startsWith(NEWTAB);
 
 // ---------- Opening the palette ----------
 
 chrome.commands.onCommand.addListener(async (cmd, tab) => {
-  if (cmd !== 'open-palette') return;
   tab ??= (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  if (cmd === 'close-tab') return closeTab(tab);
+  if (cmd !== 'open-palette') return;
   toggle(tab);
   saveShortcut();
 });
+
+// Ctrl+W (once you bind it to argon): closing the last tab of your last window would quit Helium, so you land on
+// argon's new tab instead, and that one stays put. Every other tab closes as usual.
+async function closeTab(tab) {
+  if (!tab) return;
+  const [tabs, windows] = await Promise.all([
+    chrome.tabs.query({ windowId: tab.windowId }),
+    chrome.windows.getAll({ windowTypes: ['normal'] })
+  ]);
+  if (tabs.length > 1 || windows.length > 1) return chrome.tabs.remove(tab.id);
+  if (isBlank(tab.url)) return;
+  await chrome.tabs.create({ windowId: tab.windowId, url: 'chrome://newtab/' });
+  await chrome.tabs.remove(tab.id);
+}
 chrome.action.onClicked.addListener(toggle);
 
 chrome.runtime.onInstalled.addListener(({ reason }) => {
@@ -90,6 +106,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 
 // An open tab is switched to rather than opened again. Leaving a blank tab for it closes the blank tab.
 async function openRow(row, mode, tabId) {
+  if (row.kind === 'command') return runCommand(row.id, tabId);
   if (row.kind !== 'tab') return open(row.url, mode, tabId);
   const target = await chrome.tabs.get(row.tabId).catch(() => null);
   if (!target) return open(row.url, mode, tabId);
@@ -115,6 +132,147 @@ async function open(url, mode = 'new', tabId) {
     openerTabId: mode === 'background' ? origin?.id : undefined,
     active: mode !== 'background'
   });
+}
+
+// ---------- Commands ----------
+
+// Typing ">" lists these; a search that clearly names one ("dupl") shows it too. `tab` commands act on the tab
+// the palette was opened on, and need a real page there. `page` commands run in the page itself (they need the
+// keypress that ran them: copying, picture-in-picture), so the palette runs those without a round trip.
+const COMMANDS = [
+  { id: 'pin', icon: 'pin', tab: true, title: (t) => (t.pinned ? 'Unpin Tab' : 'Pin Tab'), words: 'pin unpin' },
+  { id: 'duplicate', icon: 'duplicate', tab: true, title: 'Duplicate Tab', words: 'duplicate clone copy' },
+  { id: 'mute', icon: 'sound', tab: true, title: (t) => (t.mutedInfo?.muted ? 'Unmute Tab' : 'Mute Tab'), words: 'mute unmute sound audio silence' },
+  { id: 'reload', icon: 'reload', tab: true, title: 'Reload Tab', words: 'reload refresh' },
+  { id: 'close', icon: 'close', tab: true, title: 'Close Tab', words: 'close' },
+  { id: 'copy', icon: 'copy', tab: true, page: true, title: 'Copy Link', words: 'copy link url address share' },
+  { id: 'copy-md', icon: 'copy', tab: true, page: true, title: 'Copy as Markdown Link', words: 'copy markdown link md' },
+  { id: 'pip', icon: 'pip', tab: true, page: true, title: 'Picture-in-Picture', words: 'picture in pip video float' },
+  { id: 'move', icon: 'window', tab: true, title: 'Move Tab to New Window', words: 'move detach new window' },
+  { id: 'reopen', icon: 'restore', title: 'Reopen Closed Tab', words: 'reopen restore undo closed' },
+  { id: 'close-others', icon: 'close', tab: true, title: 'Close Other Tabs', words: 'close other tabs' },
+  { id: 'close-right', icon: 'close', tab: true, title: 'Close Tabs to the Right', words: 'close tabs right' },
+  { id: 'unload', icon: 'sleep', title: 'Unload Other Tabs', words: 'unload sleep discard memory free other tabs' },
+  { id: 'zoom-in', icon: 'zoom', tab: true, title: 'Zoom In', words: 'zoom in bigger larger' },
+  { id: 'zoom-out', icon: 'zoom', tab: true, title: 'Zoom Out', words: 'zoom out smaller' },
+  { id: 'zoom-reset', icon: 'zoom', tab: true, title: 'Reset Zoom', words: 'reset zoom actual size' },
+  { id: 'window', icon: 'window', title: 'New Window', words: 'new window' },
+  { id: 'incognito', icon: 'incognito', title: 'New Incognito Window', words: 'new incognito private window' },
+  { id: 'history', icon: 'history', title: 'Open History', words: 'history', url: 'chrome://history' },
+  { id: 'downloads', icon: 'download', title: 'Open Downloads', words: 'downloads', url: 'chrome://downloads' },
+  { id: 'extensions', icon: 'puzzle', title: 'Open Extensions', words: 'extensions addons', url: 'chrome://extensions' },
+  { id: 'shortcuts', icon: 'keyboard', title: 'Keyboard Shortcuts', words: 'keyboard shortcuts keys hotkeys', url: 'chrome://extensions/shortcuts' },
+  { id: 'settings', icon: 'gear', title: 'Browser Settings', words: 'settings preferences options', url: 'chrome://settings' }
+];
+
+function commandRows(text, origin) {
+  const terms = text.toLowerCase().split(/\s+/).filter(Boolean);
+  const onPage = origin && /^(https?|file):/.test(origin.url || '');
+  return COMMANDS
+    .filter((c) => !c.tab || onPage)
+    .map((c) => ({ ...c, title: typeof c.title === 'function' ? c.title(origin) : c.title }))
+    .filter((c) => {
+      const words = `${c.title} ${c.words}`.toLowerCase().split(/[\s-]+/);
+      return terms.every((term) => words.some((w) => w.startsWith(term)));
+    })
+    .map((c) => ({
+      kind: 'command', id: c.id, icon: c.icon, title: c.title, page: !!c.page,
+      // What page commands need to do their work in the page.
+      ...(c.page ? { url: origin.url, pageTitle: origin.title } : {})
+    }));
+}
+
+// The one command a search clearly names: its title (or one of its words) starts with everything you typed.
+function namedCommand(phrase, origin) {
+  if (phrase.length < 3) return null;
+  return commandRows(phrase, origin).find((c) => c.title.toLowerCase().startsWith(phrase)) || null;
+}
+
+async function runCommand(id, tabId) {
+  const t = tabId != null ? await chrome.tabs.get(tabId).catch(() => null) : null;
+  const cmd = COMMANDS.find((c) => c.id === id);
+  if (!cmd || (cmd.tab && !t)) return;
+  const others = async (filter) => (await chrome.tabs.query({ windowId: t.windowId })).filter((x) => x.id !== t.id && !x.pinned && filter(x));
+  const zoom = async (f) => chrome.tabs.setZoom(t.id, f(await chrome.tabs.getZoom(t.id)));
+  const steps = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
+  switch (id) {
+    case 'pin': return chrome.tabs.update(t.id, { pinned: !t.pinned });
+    case 'duplicate': return chrome.tabs.duplicate(t.id);
+    case 'mute': return chrome.tabs.update(t.id, { muted: !t.mutedInfo?.muted });
+    case 'reload': return chrome.tabs.reload(t.id);
+    case 'close': return closeTab(t);
+    case 'move': return chrome.windows.create({ tabId: t.id });
+    case 'reopen': return chrome.sessions.restore();
+    case 'close-others': return chrome.tabs.remove((await others(() => true)).map((x) => x.id));
+    case 'close-right': return chrome.tabs.remove((await others((x) => x.index > t.index)).map((x) => x.id));
+    case 'unload': {
+      // Every tab you're not looking at, except ones playing sound, gives its memory back until you return.
+      const tabs = await chrome.tabs.query({ active: false, discarded: false, audible: false });
+      return Promise.all(tabs.map((x) => chrome.tabs.discard(x.id).catch(() => {})));
+    }
+    case 'zoom-in': return zoom((z) => steps.find((s) => s > z + 0.01) ?? z);
+    case 'zoom-out': return zoom((z) => [...steps].reverse().find((s) => s < z - 0.01) ?? z);
+    case 'zoom-reset': return chrome.tabs.setZoom(t.id, 0);
+    case 'window': return chrome.windows.create({});
+    case 'incognito': return chrome.windows.create({ incognito: true });
+    default: return cmd.url && chrome.tabs.create({ url: cmd.url, windowId: t?.windowId, index: t ? t.index + 1 : undefined });
+  }
+}
+
+// ---------- Calculator ----------
+
+// "12*7", "(3+4)^2/7", "1.5 × 4": answered instantly, with no network. Enter copies the result.
+function calculate(text) {
+  const src = text.replace(/[×x]/g, '*').replace(/÷/g, '/').replace(/,/g, '').replace(/\s+/g, '');
+  if (!/^[\d.+\-*/^()]+$/.test(src) || !/\d/.test(src) || !/\d[+\-*/^]|\)[+\-*/^(\d]|\d\(/.test(src)) return null;
+  if (/^[\d-]+$/.test(src)) return null; // dates and phone numbers (2026-10-07, 555-1234) aren't sums
+  let i = 0;
+  const peek = () => src[i];
+  const number = () => {
+    const m = src.slice(i).match(/^\d*\.?\d+/);
+    if (!m) throw 0;
+    i += m[0].length;
+    return parseFloat(m[0]);
+  };
+  const atom = () => {
+    if (peek() === '-') { i++; return -atom(); }
+    if (peek() === '+') { i++; return atom(); }
+    if (peek() === '(') {
+      i++;
+      const v = sum();
+      if (peek() !== ')') throw 0;
+      i++;
+      return v;
+    }
+    return number();
+  };
+  const power = () => {
+    const base = atom();
+    if (peek() === '^') { i++; return base ** power(); }
+    return base;
+  };
+  const product = () => {
+    let v = power();
+    for (;;) {
+      if (peek() === '*') { i++; v *= power(); }
+      else if (peek() === '/') { i++; v /= power(); }
+      else if (peek() === '(') v *= power(); // 2(3+4)
+      else return v;
+    }
+  };
+  const sum = () => {
+    let v = product();
+    for (;;) {
+      if (peek() === '+') { i++; v += product(); }
+      else if (peek() === '-') { i++; v -= product(); }
+      else return v;
+    }
+  };
+  try {
+    const v = sum();
+    if (i !== src.length || !Number.isFinite(v)) return null;
+    return String(parseFloat(v.toPrecision(12)));
+  } catch { return null; }
 }
 
 // ---------- URLs ----------
@@ -302,6 +460,10 @@ async function query(raw, tabId) {
   const q = raw.replace(/^\s+/, '').replace(/\s+/g, ' ');
   const trimmed = q.trim();
   if (!trimmed) return recent(tabId);
+  const here = () => (tabId != null ? chrome.tabs.get(tabId).catch(() => null) : null);
+
+  // Command mode: ">" lists everything argon can do to this tab and the browser.
+  if (trimmed.startsWith('>')) return commandRows(trimmed.slice(1), await here());
 
   // !bangs, exactly like Helium's address bar: "!yt cats", "cats !yt", or a bang being typed.
   const bang = await bangRows(q);
@@ -310,7 +472,7 @@ async function query(raw, tabId) {
   const phrase = trimmed.toLowerCase();
   const terms = phrase.split(' ');
   const now = Date.now();
-  const [items, tabs] = await Promise.all([historyItems(trimmed), openTabs(tabId)]);
+  const [items, tabs, origin] = await Promise.all([historyItems(trimmed), openTabs(tabId), here()]);
   const scored = [];
   for (const e of items) {
     const m = matchScore(terms, phrase, e);
@@ -359,6 +521,10 @@ async function query(raw, tabId) {
   };
   seen.add('s:' + phrase); // searching exactly what you typed is the Google row, below
 
+  // Arithmetic is answered on the spot, first.
+  const answer = calculate(trimmed);
+  if (answer) rows.push({ kind: 'answer', title: '= ' + answer, subtitle: 'Calculator', copy: answer, action: 'Copy', url: googleUrl(trimmed), fill: trimmed });
+
   // A full address you typed that you've been to (or have open) goes first, exactly as typed: no autofill.
   const typedUrl = looksLikeUrl(trimmed) ? cleanUrl(toUrl(trimmed)).toLowerCase() : null;
   const exact = typedUrl && (openAt.get(typedUrl) || scored.find((s) => s.e.cl === typedUrl)?.e);
@@ -388,6 +554,10 @@ async function query(raw, tabId) {
 
   // And always: search Google for it.
   rows.push(googleRow(trimmed));
+
+  // A command you're clearly naming ("dupl" -> Duplicate Tab) comes right after.
+  const named = !typedUrl && !answer && namedCommand(phrase, origin);
+  if (named) rows.push(named);
   return rows;
 }
 

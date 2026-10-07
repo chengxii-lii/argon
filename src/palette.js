@@ -8,7 +8,8 @@
   }
   const alive = () => { try { return !!chrome.runtime?.id; } catch { return false; } };
 
-  const IN_POPUP = location.protocol === 'chrome-extension:';
+  // The toolbar popup draws the palette as the whole window. argon's new tab page draws it like any page.
+  const IN_POPUP = location.protocol === 'chrome-extension:' && location.pathname.endsWith('/popup.html');
   const POPUP_TAB = IN_POPUP ? Number(new URLSearchParams(location.search).get('tab')) || undefined : undefined;
 
   const send = (msg) => new Promise((resolve) => {
@@ -27,10 +28,28 @@
     history: svg('<path d="M3.5 10a6.5 6.5 0 1 0 1.9-4.6"/><path d="M3.5 3.75V6.5h2.75"/><path d="M10 6.75V10l2.25 1.5"/>'),
     globe: svg('<circle cx="10" cy="10" r="6.75"/><path d="M3.25 10h13.5M10 3.25c2.1 2.3 2.1 11.2 0 13.5M10 3.25c-2.1 2.3-2.1 11.2 0 13.5"/>'),
     answer: svg('<rect x="4.25" y="3.25" width="11.5" height="13.5" rx="2.25"/><path d="M7 6.5h6M7.25 10h.01M10 10h.01M12.75 10h.01M7.25 13h.01M10 13h.01M12.75 13h.01"/>'),
-    enter: svg('<path d="M15.5 4.5v5.25a2 2 0 0 1-2 2H5"/><path d="m7.75 8.5-3 3.25 3 3.25"/>')
+    enter: svg('<path d="M15.5 4.5v5.25a2 2 0 0 1-2 2H5"/><path d="m7.75 8.5-3 3.25 3 3.25"/>'),
+    // Commands
+    command: svg('<path d="m6 6.5 3.5 3.5L6 13.5M11 14h4"/>'),
+    pin: svg('<path d="M12 3.5 16.5 8M13 4.5 9.5 8l-3.5.5 5.5 5.5.5-3.5L15.5 7M8.25 11.75 4 16"/>'),
+    duplicate: svg('<rect x="3.5" y="6" width="9.5" height="10.5" rx="2"/><path d="M7 3.5h7.5a2 2 0 0 1 2 2V13"/>'),
+    sound: svg('<path d="M4 8v4h3l4 3.5v-11L7 8H4z"/><path d="M14 7.5a3.5 3.5 0 0 1 0 5M15.75 5.5a6 6 0 0 1 0 9"/>'),
+    reload: svg('<path d="M15.75 10a5.75 5.75 0 1 1-1.7-4.1"/><path d="M14.5 3v3.5H11"/>'),
+    close: svg('<path d="m5.5 5.5 9 9M14.5 5.5l-9 9"/>'),
+    copy: svg('<path d="M8.5 11.5 11.5 8.5M7 9.5 5.5 11a2.5 2.5 0 0 0 3.5 3.5l1.5-1.5M13 10.5 14.5 9A2.5 2.5 0 0 0 11 5.5L9.5 7"/>'),
+    pip: svg('<rect x="3" y="4.5" width="14" height="11" rx="2"/><rect x="10" y="10" width="5" height="3.5" rx="1"/>'),
+    window: svg('<rect x="3" y="4" width="14" height="12" rx="2"/><path d="M3 7.5h14"/>'),
+    restore: svg('<path d="M4.25 10a5.75 5.75 0 1 0 1.7-4.1"/><path d="M5.5 3v3.5H9"/>'),
+    sleep: svg('<path d="M15.5 12.25A6.25 6.25 0 0 1 7.75 4.5a6.25 6.25 0 1 0 7.75 7.75z"/>'),
+    zoom: svg('<circle cx="8.75" cy="8.75" r="5.25"/><path d="m12.75 12.75 3.75 3.75M6.75 8.75h4M8.75 6.75v4"/>'),
+    incognito: svg('<path d="M3 10h14M5.5 10l1.5-5.5h6L14.5 10"/><circle cx="6.75" cy="13.5" r="2"/><circle cx="13.25" cy="13.5" r="2"/><path d="M8.75 13.5h2.5"/>'),
+    download: svg('<path d="M10 3.5v9M6.25 8.75 10 12.5l3.75-3.75M4 16h12"/>'),
+    puzzle: svg('<path d="M8 4.5a1.75 1.75 0 0 1 3.5 0V6H15v3.5h-1.5a1.75 1.75 0 0 0 0 3.5H15v3.5H4.5V13H6a1.75 1.75 0 0 0 0-3.5H4.5V6H8z"/>'),
+    keyboard: svg('<rect x="2.75" y="5" width="14.5" height="10" rx="2"/><path d="M6 8.25h.01M9 8.25h.01M12 8.25h.01M14.25 8.25h.01M6.5 11.75h7"/>'),
+    gear: svg('<circle cx="10" cy="10" r="2.5"/><path d="M10 3v2M10 15v2M3 10h2M15 10h2M5.05 5.05l1.4 1.4M13.55 13.55l1.4 1.4M5.05 14.95l1.4-1.4M13.55 6.45l1.4-1.4"/>')
   };
   const MAX_ROWS = 7; // the palette is exactly this many rows tall
-  const ACTION = { google: 'Search Google', suggest: 'Search', history: 'Search', page: 'Open', url: 'Open', answer: 'Search Google', tab: 'Switch to Tab' };
+  const ACTION = { google: 'Search Google', suggest: 'Search', history: 'Search', page: 'Open', url: 'Open', answer: 'Search Google', tab: 'Switch to Tab', command: 'Run' };
 
   const CSS = `
 :host { all: initial; }
@@ -103,6 +122,14 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
 .badge { flex: none; font-size: 11px; font-weight: 500; color: var(--muted); padding: 2px 7px; border-radius: 6px; background: var(--tile); }
 .row.sel .badge { display: none; }
 
+/* After a copy: a small note at the bottom of the page, gone by itself. */
+.toast { display: none; position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%);
+  padding: 9px 16px; border-radius: 10px; background: var(--panel); box-shadow: var(--shadow);
+  backdrop-filter: blur(36px) saturate(1.8); -webkit-backdrop-filter: blur(36px) saturate(1.8);
+  font-size: 13px; font-weight: 500; white-space: nowrap; }
+.root.toasting .backdrop, .root.toasting .panel { display: none; }
+.root.toasting .toast { display: block; }
+
 /* The toolbar popup: no backdrop, the panel is the whole window. */
 .root.popup .panel { position: static; transform: none; width: 640px; height: auto; border-radius: 0; box-shadow: none;
   background: var(--panel-solid); backdrop-filter: none; }
@@ -129,13 +156,16 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
     ${IN_POPUP ? '' : '<div class="backdrop"></div>'}
     <div class="panel" role="dialog" aria-label="Search">
       <label class="field">${ICON.search}<input type="text" spellcheck="false" autocomplete="off" autocapitalize="off"
-        placeholder="Search Google or type a URL" aria-autocomplete="both" aria-controls="argon-list" role="combobox" aria-expanded="true"></label>
+        placeholder="Search, or type > for commands" aria-autocomplete="both" aria-controls="argon-list" role="combobox" aria-expanded="true"></label>
       <ul class="list" id="argon-list" role="listbox"></ul>
-    </div>`;
+    </div>
+    <div class="toast" role="status"></div>`;
   shadow.append(sheet, root);
   const input = root.querySelector('input');
   const list = root.querySelector('.list');
   const backdrop = root.querySelector('.backdrop');
+  const toastEl = root.querySelector('.toast');
+  let toastTimer = 0;
 
   // ---------- State ----------
 
@@ -191,7 +221,8 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
     const box = document.createElement('span');
     box.className = 'icon';
     const glyph = r.kind === 'google' || r.kind === 'suggest' ? ICON.search
-      : r.kind === 'history' ? ICON.history : r.kind === 'answer' ? ICON.answer : null;
+      : r.kind === 'history' ? ICON.history : r.kind === 'answer' ? ICON.answer
+      : r.kind === 'command' ? ICON[r.icon] || ICON.command : null;
     if (glyph) box.innerHTML = glyph;
     else {
       const img = document.createElement('img');
@@ -240,7 +271,12 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
 
   // History first, then the Google search, then Google's suggestions (minus anything already listed).
   function merge() {
-    const seen = new Set(local.map((r) => (r.kind === 'url' || r.kind === 'page' || r.kind === 'tab' ? 'u:' + r.url.replace(/\/$/, '') : 's:' + r.title.toLowerCase())));
+    // Picture-in-picture only where there's a video to float (and never from the toolbar popup).
+    const usable = local.filter((r) => r.id !== 'pip' || (!IN_POPUP && document.querySelector('video')));
+    // Command mode lists every command; the list scrolls.
+    if (typed.trim().startsWith('>')) return usable;
+    const seen = new Set(usable.map((r) => (r.kind === 'url' || r.kind === 'page' || r.kind === 'tab' ? 'u:' + r.url.replace(/\/$/, '')
+      : r.kind === 'answer' ? 'a' : 's:' + r.title.toLowerCase())));
     const extra = remote.filter((r) => {
       const key = r.kind === 'url' ? 'u:' + r.url.replace(/\/$/, '') : r.kind === 'answer' ? 'a' : 's:' + r.title.toLowerCase();
       if (seen.has(key)) return false;
@@ -250,7 +286,7 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
     // A calculator answer goes right under the Google search.
     const answer = extra.filter((r) => r.kind === 'answer');
     const rest = extra.filter((r) => r.kind !== 'answer');
-    return [...local, ...answer, ...rest].slice(0, MAX_ROWS);
+    return [...usable, ...answer, ...rest].slice(0, MAX_ROWS);
   }
 
   function show(keepSel) {
@@ -329,6 +365,14 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
   }
 
   function go(e, row) {
+    if (row && rowsFor === typed && !e.altKey) {
+      // The calculator's answer: copy it.
+      if (row.kind === 'answer' && row.copy) {
+        copyText(row.copy);
+        return close(false, `Copied ${row.copy}`);
+      }
+      if (row.kind === 'command') return runCommand(row);
+    }
     const mode = modeFor(e);
     // Alt+Enter: search Google for exactly what you typed, whatever is selected.
     if (e.altKey && typed.trim()) send({ type: 'open', url: 'https://www.google.com/search?q=' + encodeURIComponent(typed.trim()).replace(/%20/g, '+'), mode });
@@ -337,6 +381,46 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
     else if (typed.trim()) send({ type: 'go', q: typed, mode });
     else return;
     close(mode === 'here' || mode === 'new');
+  }
+
+  // ---------- Commands ----------
+
+  // Copying and picture-in-picture happen right here in the page: they need the keypress that asked for them.
+  // Everything else is done by argon's background.
+  function runCommand(row) {
+    if (row.id === 'copy' || row.id === 'copy-md') {
+      copyText(row.id === 'copy' ? row.url : `[${(row.pageTitle || row.url).replace(/([[\]])/g, '\\$1')}](${row.url})`);
+      return close(false, row.id === 'copy' ? 'Link copied' : 'Markdown link copied');
+    }
+    if (row.id === 'pip') {
+      close(false);
+      if (document.pictureInPictureElement) return void document.exitPictureInPicture().catch(() => {});
+      // The biggest video on the page, playing ones first.
+      const videos = [...document.querySelectorAll('video')].sort((a, b) =>
+        (b.paused ? 0 : 1) - (a.paused ? 0 : 1) || b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
+      const v = videos[0];
+      if (v) {
+        v.disablePictureInPicture = false;
+        v.requestPictureInPicture().catch(() => {});
+      }
+      return;
+    }
+    send({ type: 'open', row });
+    close(row.id !== 'close');
+  }
+
+  function copyText(text) {
+    navigator.clipboard?.writeText(text).catch(fallbackCopy) ?? fallbackCopy();
+    function fallbackCopy() {
+      // Pages without clipboard access (plain http): the old way, through a hidden text box.
+      const box = document.createElement('textarea');
+      box.value = text;
+      box.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+      (document.body || document.documentElement).append(box);
+      box.select();
+      try { document.execCommand('copy'); } catch { /* nothing more to try */ }
+      box.remove();
+    }
   }
 
   // Shift+Delete: forget the selected past search or page, like the address bar.
@@ -468,6 +552,7 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
   function open() {
     if (isOpen) return;
     isOpen = true;
+    hide(); // a note from the last copy goes away
     if (!IN_POPUP) {
       lastFocus = document.activeElement;
       attach();
@@ -489,18 +574,33 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
     update();
   }
 
-  function close(navigating) {
+  // `note`: a short message (like "Link copied") left on screen for a moment after the palette closes.
+  function close(navigating, note) {
     if (!isOpen) return;
     isOpen = false;
     seq++;
     if (IN_POPUP) return window.close();
-    try { host.hidePopover(); } catch { /* not a popover */ }
-    host.style.setProperty('display', 'none', 'important');
+    if (note) {
+      root.classList.add('toasting');
+      toastEl.textContent = note;
+      host.style.setProperty('pointer-events', 'none', 'important'); // the page stays clickable underneath
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(hide, 1400);
+    } else hide();
     // Put focus back where you were, unless you're leaving for another page.
     if (!navigating && lastFocus?.isConnected && lastFocus !== document.body) {
       try { lastFocus.focus({ preventScroll: true }); } catch { /* fine */ }
     }
     lastFocus = null;
+  }
+
+  function hide() {
+    clearTimeout(toastTimer);
+    root.classList.remove('toasting');
+    host.style.setProperty('pointer-events', 'auto', 'important');
+    if (isOpen) return;
+    try { host.hidePopover(); } catch { /* not a popover */ }
+    host.style.setProperty('display', 'none', 'important');
   }
 
   // Returns false when the page doesn't have keyboard focus (you pressed Ctrl+T in the address bar): no page can

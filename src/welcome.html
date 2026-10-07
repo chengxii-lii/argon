@@ -34,6 +34,10 @@
   .status.ok .dot { background: var(--ok); }
   .status.ok { color: var(--ok); }
   .status:not(.ok) { color: var(--warn); }
+  .status.optional:not(.ok) { color: var(--muted); }
+  .status.optional:not(.ok) .dot { background: var(--muted); opacity: 0.6; }
+  .status + .status { margin-top: 8px; }
+  .note { margin-top: 10px !important; font-size: 13.5px; }
   button { font: inherit; font-weight: 560; border: 0; border-radius: 9px; padding: 9px 16px; margin-top: 16px;
     background: var(--accent); color: #fff; cursor: pointer; }
   button:hover { filter: brightness(1.08); }
@@ -57,14 +61,16 @@
   </header>
 
   <section class="card">
-    <h2>Set Ctrl+T</h2>
+    <h2>Set Ctrl+T (and Ctrl+W)</h2>
     <p>Browsers don't let an extension take Ctrl+T on its own, so it's one quick step:</p>
     <ol>
       <li>Open the shortcuts page with the button below.</li>
-      <li>Find <b>argon</b> → “Open the palette” and click the pencil.</li>
-      <li>Press <kbd>Ctrl</kbd> <kbd>T</kbd>. If another extension already uses it, clear that one first.</li>
+      <li>Find <b>argon</b> → “Open the palette”, click the pencil and press <kbd>Ctrl</kbd> <kbd>T</kbd>.</li>
+      <li>Optional: “Close tab, but never your last one” → <kbd>Ctrl</kbd> <kbd>W</kbd>. Closing your last tab then lands on argon’s new tab instead of quitting Helium.</li>
     </ol>
+    <p class="note">If another extension already uses a shortcut, clear it there first.</p>
     <div class="status" id="status"><span class="dot"></span><span id="status-text">Checking…</span></div>
+    <div class="status" id="status-w"><span class="dot"></span><span id="status-w-text">Checking…</span></div>
     <button id="shortcuts" type="button">Open shortcuts page</button>
   </section>
 
@@ -78,6 +84,8 @@
       <tr><td><kbd>Alt</kbd> <kbd>Enter</kbd></td><td>Search Google for exactly what you typed</td></tr>
       <tr><td><kbd>→</kbd></td><td>Accept the autofill</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Close</td></tr>
+      <tr><td><kbd>&gt;</kbd></td><td>Commands: pin, mute, copy link, close other tabs, picture-in-picture…</td></tr>
+      <tr><td><kbd>Shift</kbd> <kbd>Delete</kbd></td><td>Forget the selected past search or page</td></tr>
       <tr><td><kbd>!yt</kbd> cats · cats <kbd>!w</kbd></td><td>Helium's !bangs, all 13,000 of them</td></tr>
     </table>
   </section>

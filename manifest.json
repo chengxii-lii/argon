@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "argon",
-  "version": "1.4",
+  "version": "1.5",
   "description": "Ctrl+T opens a fast command palette on the page you're on: history first, then Google. Made for Helium, with its !bangs.",
   "minimum_chrome_version": "116",
   "icons": {
@@ -10,7 +10,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["history", "tabs", "scripting", "storage", "favicon"],
+  "permissions": ["history", "tabs", "scripting", "storage", "favicon", "sessions"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "src/background.js"
@@ -37,7 +37,13 @@
         "mac": "Alt+T"
       },
       "description": "Open the palette (set this to Ctrl+T)"
+    },
+    "close-tab": {
+      "description": "Close tab, but never your last one (set this to Ctrl+W)"
     }
+  },
+  "chrome_url_overrides": {
+    "newtab": "src/newtab.html"
   },
   "web_accessible_resources": [
     {
