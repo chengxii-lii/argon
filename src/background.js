@@ -29,7 +29,8 @@ async function closeTab(tab) {
   const [tabs, win] = await Promise.all([chrome.tabs.query({ windowId: tab.windowId }), chrome.windows.get(tab.windowId)]);
   if (tabs.length > 1 || win.type !== 'normal') return chrome.tabs.remove(tab.id);
   if (isBlank(tab.pendingUrl || tab.url)) return;
-  await chrome.tabs.create({ windowId: tab.windowId, url: 'chrome://newtab/' });
+  // Opened by its own address, not chrome://newtab/, so the page gets focus instead of the address bar: Ctrl+T then opens the palette right there.
+  await chrome.tabs.create({ windowId: tab.windowId, url: NEWTAB });
   await chrome.tabs.remove(tab.id);
 }
 chrome.action.onClicked.addListener(toggle);
