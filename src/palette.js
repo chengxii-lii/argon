@@ -30,7 +30,7 @@
     enter: svg('<path d="M15.5 4.5v5.25a2 2 0 0 1-2 2H5"/><path d="m7.75 8.5-3 3.25 3 3.25"/>')
   };
   const MAX_ROWS = 7; // the palette is exactly this many rows tall
-  const ACTION = { google: 'Search Google', suggest: 'Search', history: 'Search', page: 'Open', url: 'Open', answer: 'Search Google' };
+  const ACTION = { google: 'Search Google', suggest: 'Search', history: 'Search', page: 'Open', url: 'Open', answer: 'Search Google', tab: 'Switch to Tab' };
 
   const CSS = `
 :host { all: initial; }
@@ -99,6 +99,9 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
 .action { flex: none; display: none; align-items: center; gap: 6px; font-size: 12px; color: rgba(255, 255, 255, 0.85); }
 .action svg { width: 14px; height: 14px; }
 .row.sel .action { display: flex; }
+/* Open tabs say so, until selected (then the action says "Switch to Tab"). */
+.badge { flex: none; font-size: 11px; font-weight: 500; color: var(--muted); padding: 2px 7px; border-radius: 6px; background: var(--tile); }
+.row.sel .badge { display: none; }
 
 /* The toolbar popup: no backdrop, the panel is the whole window. */
 .root.popup .panel { position: static; transform: none; width: 640px; height: auto; border-radius: 0; box-shadow: none;
@@ -220,6 +223,7 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
       action.innerHTML = ICON.enter;
       action.prepend(r.action || ACTION[r.kind] || 'Open');
       li.append(iconFor(r), text, action);
+      if (r.kind === 'tab') li.append(Object.assign(document.createElement('span'), { className: 'badge', textContent: 'Tab' }));
       frag.append(li);
     });
     list.replaceChildren(frag);
@@ -236,7 +240,7 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
 
   // History first, then the Google search, then Google's suggestions (minus anything already listed).
   function merge() {
-    const seen = new Set(local.map((r) => (r.kind === 'url' || r.kind === 'page' ? 'u:' + r.url.replace(/\/$/, '') : 's:' + r.title.toLowerCase())));
+    const seen = new Set(local.map((r) => (r.kind === 'url' || r.kind === 'page' || r.kind === 'tab' ? 'u:' + r.url.replace(/\/$/, '') : 's:' + r.title.toLowerCase())));
     const extra = remote.filter((r) => {
       const key = r.kind === 'url' ? 'u:' + r.url.replace(/\/$/, '') : r.kind === 'answer' ? 'a' : 's:' + r.title.toLowerCase();
       if (seen.has(key)) return false;
@@ -328,11 +332,66 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
     const mode = modeFor(e);
     // Alt+Enter: search Google for exactly what you typed, whatever is selected.
     if (e.altKey && typed.trim()) send({ type: 'open', url: 'https://www.google.com/search?q=' + encodeURIComponent(typed.trim()).replace(/%20/g, '+'), mode });
-    else if (row && rowsFor === typed) send({ type: 'open', url: row.url, mode });
+    else if (row && rowsFor === typed) send({ type: 'open', row, mode });
     // Enter pressed before the results for the last letters came back: let argon rank what you typed.
     else if (typed.trim()) send({ type: 'go', q: typed, mode });
     else return;
     close(mode === 'here' || mode === 'new');
+  }
+
+  // Shift+Delete: forget the selected past search or page, like the address bar.
+  async function forget() {
+    const row = rows[sel];
+    const at = sel;
+    input.value = typed; // drop an autofill or a suggestion you Tabbed to
+    allowFill = false;
+    await send({ type: 'remove', row });
+    await update();
+    sel = Math.min(at, rows.length - 1);
+    markSelected(false);
+  }
+
+  // ---------- Opening before the background is awake ----------
+
+  // The browser swallows your shortcut's key press, but letting go of the key still reaches the page. A key let
+  // go that the page never saw go down, while its modifier was held, means the shortcut was just used: open right
+  // away instead of waiting for argon's background worker, which may first have to wake up.
+  let shortcut = null;      // e.g. { mod: 'Control', code: 'KeyT' }
+  let modDownAt = -1e9;     // when the shortcut's modifier last went down
+  let armed = false;        // the modifier went down and the shortcut's key hasn't been seen
+  let pressed = new Set();  // keys the page saw go down since then
+  let early = [];           // letters typed after the shortcut, before the palette appeared
+  let lastToggle = -1e9;
+  let selfOpened = -1e9;
+
+  const MODS = { Ctrl: 'Control', MacCtrl: 'Control', Alt: 'Alt', Shift: 'Shift', Command: 'Meta' };
+  function parseShortcut(s) {
+    const parts = (s || '').split('+');
+    const key = parts[parts.length - 1];
+    const code = /^[A-Z]$/.test(key) ? 'Key' + key : /^[0-9]$/.test(key) ? 'Digit' + key
+      : { Comma: 'Comma', Period: 'Period', Space: 'Space' }[key];
+    return parts.length > 1 && MODS[parts[0]] && code ? { mod: MODS[parts[0]], code } : null;
+  }
+
+  function watchShortcut(e) {
+    if (!shortcut || !e.isTrusted) return;
+    const now = performance.now();
+    if (e.type === 'keydown') {
+      if (e.key === shortcut.mod) {
+        if (!e.repeat) { modDownAt = now; armed = true; pressed = new Set(); early = []; }
+      } else {
+        pressed.add(e.code);
+        // Letters typed straight after the shortcut (the modifier already let go) are meant for the palette.
+        if (!isOpen && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && now - modDownAt < 1500) early.push(e.key);
+      }
+    } else if (e.type === 'keyup' && e.code === shortcut.code && armed && !pressed.has(e.code) && now - modDownAt < 1500) {
+      armed = false;
+      if (!isOpen && now - lastToggle > 700 && document.hasFocus()) {
+        selfOpened = now;
+        lastToggle = now;
+        open();
+      }
+    }
   }
 
   // ---------- Keyboard ----------
@@ -340,6 +399,7 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
   // Registered on the window before the page's own listeners (argon loads as the page starts), so pages with
   // single-key shortcuts (YouTube, GitHub, Gmail) never see what you type into the palette.
   function onKey(e) {
+    if (!IN_POPUP) watchShortcut(e);
     if (!isOpen) return;
     // Esc always closes, even if the page managed to pull focus away from the palette.
     if (e.key === 'Escape' && e.type === 'keydown' && !e.isComposing) {
@@ -360,6 +420,7 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
     if (k === 'ArrowDown') { e.preventDefault(); return move(1); }
     if (k === 'ArrowUp') { e.preventDefault(); return move(-1); }
     if (k === 'Enter') { e.preventDefault(); return go(e, rows[sel]); }
+    if (k === 'Delete' && e.shiftKey && rows[sel]?.removable) { e.preventDefault(); return forget(); }
     // Right arrow or End at the end of an autofill accepts it.
     if ((k === 'ArrowRight' || k === 'End') && input.selectionEnd === input.value.length && input.selectionStart < input.selectionEnd) {
       typed = input.value;
@@ -414,8 +475,11 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
       // The top layer puts the palette above everything, even fullscreen videos and the page's own dialogs.
       try { host.popover = 'manual'; host.showPopover(); } catch { /* still on top via z-index */ }
     }
-    typed = '';
-    input.value = '';
+    // Anything you already typed after the shortcut carries over into the field.
+    const seed = performance.now() - modDownAt < 1500 ? early.join('') : '';
+    early = [];
+    typed = seed;
+    input.value = seed;
     allowFill = true;
     local = [];
     remote = [];
@@ -442,6 +506,7 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
   // Returns false when the page doesn't have keyboard focus (you pressed Ctrl+T in the address bar): no page can
   // take focus from the browser's toolbar, so argon drops the palette from the toolbar icon instead.
   function toggle() {
+    lastToggle = performance.now();
     if (isOpen) { close(false); return true; }
     if (!IN_POPUP && !document.hasFocus()) return false;
     open();
@@ -455,9 +520,36 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
 
   function onMessage(msg, _sender, reply) {
     if (msg?.type !== 'toggle') return;
+    // Already opened when the shortcut's key was let go: this is the same Ctrl+T arriving late.
+    if (performance.now() - selfOpened < 1000) {
+      selfOpened = -1e9;
+      return void reply('ok');
+    }
     reply(toggle() ? 'ok' : 'nofocus');
   }
   if (!IN_POPUP) chrome.runtime.onMessage.addListener(onMessage);
+
+  // Which shortcut to watch for (argon's background keeps it in storage).
+  function onStorage(changes, area) {
+    if (area === 'local' && changes.shortcut) shortcut = parseShortcut(changes.shortcut.newValue);
+  }
+  if (!IN_POPUP) {
+    try {
+      chrome.storage.local.get('shortcut', (r) => { void chrome.runtime.lastError; shortcut = parseShortcut(r?.shortcut); });
+      chrome.storage.onChanged.addListener(onStorage);
+    } catch { /* disconnected */ }
+  }
+
+  // Keep argon's background awake while you're using this tab, so Ctrl+T never waits on it starting up.
+  // Only the tab you're looking at does this: one tiny message every 20 seconds.
+  function ping() {
+    if (document.visibilityState === 'visible' && document.hasFocus()) send({ type: 'ping' });
+  }
+  const pinger = IN_POPUP ? 0 : setInterval(ping, 20e3);
+  if (!IN_POPUP) {
+    addEventListener('focus', ping);
+    ping();
+  }
 
   // Going back to a page from the back/forward cache shouldn't bring the palette back with it.
   addEventListener('pagehide', () => close(true));
@@ -465,7 +557,12 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
   function destroy() {
     close(true);
     for (const type of ['keydown', 'keyup', 'keypress']) target.removeEventListener(type, onKey, true);
-    try { chrome.runtime.onMessage.removeListener(onMessage); } catch { /* disconnected */ }
+    clearInterval(pinger);
+    removeEventListener('focus', ping);
+    try {
+      chrome.runtime.onMessage.removeListener(onMessage);
+      chrome.storage.onChanged.removeListener(onStorage);
+    } catch { /* disconnected */ }
     host.remove();
   }
 

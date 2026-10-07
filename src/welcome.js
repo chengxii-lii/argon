@@ -5,6 +5,7 @@ const text = document.getElementById('status-text');
 async function check() {
   const cmd = (await chrome.commands.getAll()).find((c) => c.name === 'open-palette');
   const key = cmd?.shortcut || '';
+  chrome.storage.local.set({ shortcut: key }); // pages watch for this shortcut (see palette.js)
   const ok = /^(Ctrl|Command|⌘)\+T$/i.test(key.replace(/\s/g, ''));
   status.classList.toggle('ok', ok);
   text.textContent = ok ? 'Ctrl+T opens argon. You’re all set.'

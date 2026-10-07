@@ -19,7 +19,7 @@ Your history first, Google always, and every one of Helium's !bangs.
 
 <br>
 
-<img src=".github/assets/hero.jpg" alt="argon's palette over a page, suggesting past searches, a Google search and Google suggestions" width="100%">
+<img src=".github/assets/demo.gif" alt="argon in action: Ctrl+T, typing a search, Tab through suggestions, a !yt bang, and autofill" width="100%">
 
 ## Why
 
@@ -33,12 +33,12 @@ Ctrl+T throws you onto a blank page just to type something. argon keeps you wher
 
 ### History first, then Google
 
-Past searches and pages you've visited rank first, with inline autofill: `you` → **youtube.com**, `how to ce` → **how to center a div**. Searching Google for exactly what you typed is always the next row, followed by Google's live suggestions and calculator answers.
+Past searches and pages you've visited rank first, with inline autofill: `you` → **youtube.com**, `how to ce` → **how to center a div**. Searching Google for exactly what you typed is always the next row, followed by Google's live suggestions and calculator answers. A full address you type goes exactly where you typed.
 
 </td>
 <td width="50%" valign="top">
 
-<img src=".github/assets/autofill.jpg" alt="Typing 'you' autofills youtube.com">
+<img src=".github/assets/hero.jpg" alt="Typing 'how to c' lists past searches, then the Google search, then suggestions">
 
 </td>
 </tr>
@@ -59,9 +59,24 @@ All 13,000+ bangs from **the same list Helium's address bar uses**, refreshed ev
 <tr>
 <td width="50%" valign="top">
 
+<img src=".github/assets/tabs.jpg" alt="Typing 'argon' finds open tabs, marked Tab, with Switch to Tab on the selected one">
+
+</td>
+<td width="50%" valign="top">
+
+### Your open tabs, too
+
+Pages you already have open come up first and **switch** instead of opening twice. With nothing typed, the last few tabs you were on are right there. <kbd>Shift</kbd> <kbd>Delete</kbd> forgets a past search or page you don't want suggested again.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
 ### Fast, and out of your way
 
-- Opens in about 10 ms, with no animations
+- Opens in about 10 ms, with no animations, and never waits on a sleeping background worker
+- Anything you type before it appears still lands in the field
 - Ranks your history in memory: under 1 ms per keystroke
 - Dead center, a fixed seven rows tall, so nothing jumps around
 - Page shortcuts (YouTube, GitHub, Gmail) never see what you type
@@ -90,17 +105,19 @@ Works in any Chromium browser (Chrome, Edge, Brave, Arc). It's made for [Helium]
 | Key | Does |
 | :-- | :-- |
 | <kbd>Tab</kbd> / <kbd>Shift</kbd> <kbd>Tab</kbd> | Cycle through suggestions, filling the field as you go (also <kbd>↑</kbd> <kbd>↓</kbd>) |
-| <kbd>Enter</kbd> | Open in a new tab, like Ctrl+T always did (a blank tab is reused) |
+| <kbd>Enter</kbd> | Open in a new tab, like Ctrl+T always did (a blank tab is reused; an open tab is switched to) |
 | <kbd>Shift</kbd> <kbd>Enter</kbd> | Open in this tab |
 | <kbd>Ctrl</kbd> <kbd>Enter</kbd> | Open in a background tab |
 | <kbd>Alt</kbd> <kbd>Enter</kbd> | Search Google for exactly what you typed |
 | <kbd>→</kbd> | Accept the autofill |
+| <kbd>Shift</kbd> <kbd>Delete</kbd> | Forget the selected past search or page |
 | <kbd>Esc</kbd> | Close |
 
 ## How it works
 
 - **On the page itself.** argon draws in a closed shadow root in the browser's top layer, so pages can't restyle it and it sits above everything, fullscreen video included. It listens for keys before the page does.
 - **Where it can't draw.** Browser pages, the Web Store and the new tab page don't allow any extension in, so there the palette drops down from the toolbar icon. It does the same if you press Ctrl+T while the address bar has focus, since a page can't take focus from the toolbar.
+- **Never waiting.** The browser swallows Ctrl+T's key press, but releasing the key still reaches the page, so argon opens the palette right there, without a round trip to its background worker. Meanwhile the tab you're using pings the worker every 20 seconds so it's never asleep, and any letters you type in between carry over into the field.
 - **Bangs, the Helium way.** argon reads the first `!` that starts the text or follows a space, and fills `{searchTerms}` just as Chromium fills a search engine's template. The rules come from [Helium's own patch](https://github.com/imputnet/helium/blob/main/patches/helium/core/add-native-bangs.patch).
 
 ## Privacy
@@ -114,12 +131,16 @@ argon has no analytics, no accounts and no servers of its own. Your history is r
 
 ## Development
 
-No build step: the folder *is* the extension.
+No build step: the folder *is* the extension. The scripts need Node 22+ and, for tests and art, Helium (or any Chromium; set `BROWSER=/path/to/browser`).
 
 ```bash
-node scripts/build-bangs.js   # refresh data/bangs.json from Helium's list
-node scripts/make-icons.js    # redraw the icons
+npm test         # 36 checks in a real headless browser with argon loaded
+npm run bangs    # refresh data/bangs.json from Helium's list
+npm run icons    # redraw the icons
+npm run art      # re-render the README's banner, screenshots and demo GIF
 ```
+
+A [weekly workflow](.github/workflows/bangs.yml) opens a pull request whenever Helium's bang list changes.
 
 ## Credits
 

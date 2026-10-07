@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.4
+
+- **Open tabs.** Tabs you have open show up first and switch instead of opening twice, marked "Tab". With nothing typed, your last few tabs lead the list. Autofilling a site you have open switches to it.
+- **Shift+Delete** forgets the selected past search or page.
+- **Exact addresses win.** Typing a full address you've been to goes there, not to a longer page that starts the same.
+- **Never waiting.** Ctrl+T opens the palette the moment the key is released, without a round trip to the background worker, and the tab you're using keeps that worker awake. Letters typed before the palette appears land in the field.
+- **Repo.** `npm test` runs 36 checks in a real headless browser; `npm run art` re-renders the README art (now with a demo GIF); a weekly workflow keeps the bang list fresh.
+
 ## v1.3
 
 - Pages that differ only by their `?query` (tracking links, bot checks) show up once, as the plainer address.

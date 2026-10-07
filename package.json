@@ -1,0 +1,12 @@
+{
+  "name": "argon",
+  "private": true,
+  "description": "Developer scripts for argon. The extension itself needs no build: load this folder as is.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node scripts/test/run.mjs",
+    "bangs": "node scripts/build-bangs.js",
+    "icons": "node scripts/make-icons.js",
+    "art": "npm --prefix scripts/art install --no-audit --no-fund && node scripts/art/render.mjs"
+  }
+}

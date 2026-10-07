@@ -16,12 +16,23 @@ chrome.commands.onCommand.addListener(async (cmd, tab) => {
   if (cmd !== 'open-palette') return;
   tab ??= (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
   toggle(tab);
+  saveShortcut();
 });
 chrome.action.onClicked.addListener(toggle);
 
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   if (reason === 'install') chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome.html') });
 });
+
+// Pages watch for your shortcut's key being let go (the browser swallows the key press itself), so they can open
+// the palette without waiting for this worker to wake up. They need to know which key that is.
+async function saveShortcut() {
+  const cmd = (await chrome.commands.getAll()).find((c) => c.name === 'open-palette');
+  const shortcut = cmd?.shortcut || '';
+  const { shortcut: saved } = await chrome.storage.local.get('shortcut');
+  if (saved !== shortcut) await chrome.storage.local.set({ shortcut });
+}
+saveShortcut();
 
 // The toolbar popup (used on pages no extension can draw on) keeps a port open, so a second Ctrl+T closes it.
 const popups = new Set();
@@ -65,8 +76,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   let run;
   if (msg.type === 'query') run = query(msg.q, tabId);
   else if (msg.type === 'suggest') run = suggest(msg.q);
-  else if (msg.type === 'open') run = open(msg.url, msg.mode, tabId);
-  else if (msg.type === 'go') run = query(msg.q).then((rows) => rows[0] && open(rows[0].url, msg.mode, tabId));
+  else if (msg.type === 'open') run = msg.row ? openRow(msg.row, msg.mode, tabId) : open(msg.url, msg.mode, tabId);
+  else if (msg.type === 'go') run = query(msg.q, tabId).then((rows) => rows[0] && openRow(rows[0], msg.mode, tabId));
+  else if (msg.type === 'remove') run = remove(msg.row);
+  else if (msg.type === 'ping') run = Promise.resolve(warm()).then(() => true);
   else if (msg.type === 'shortcuts') run = chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
   if (!run) return;
   run.then((r) => reply(r ?? true), (e) => reply({ error: String(e) }));
@@ -74,6 +87,17 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 });
 
 // ---------- Opening results ----------
+
+// An open tab is switched to rather than opened again. Leaving a blank tab for it closes the blank tab.
+async function openRow(row, mode, tabId) {
+  if (row.kind !== 'tab') return open(row.url, mode, tabId);
+  const target = await chrome.tabs.get(row.tabId).catch(() => null);
+  if (!target) return open(row.url, mode, tabId);
+  await chrome.tabs.update(target.id, { active: true });
+  await chrome.windows.update(target.windowId, { focused: true });
+  const origin = tabId != null ? await chrome.tabs.get(tabId).catch(() => null) : null;
+  if (origin && origin.id !== target.id && isBlank(origin.url)) chrome.tabs.remove(origin.id).catch(() => {});
+}
 
 // mode: 'new' (default: a new tab next to this one, like Ctrl+T would have), 'here' (this tab),
 // 'background' (a new tab you don't switch to). A blank tab is always reused.
@@ -247,10 +271,32 @@ function autofill(q, phrase, list, now) {
 
 const searchRow = (e) => ({
   kind: 'history', title: e.search.q, subtitle: e.search.engine === 'Google' ? '' : e.search.engine,
-  url: e.search.url, fill: e.search.q
+  url: e.search.url, fill: e.search.q, removable: true, engine: e.search.engine
 });
-const pageRow = (e) => ({ kind: 'page', title: e.title || cleanUrl(e.url), subtitle: e.title ? cleanUrl(e.url) : '', url: e.url, fill: e.url });
+const pageRow = (e) => ({ kind: 'page', title: e.title || cleanUrl(e.url), subtitle: e.title ? cleanUrl(e.url) : '', url: e.url, fill: e.url, removable: true });
+const tabRow = (t) => ({ kind: 'tab', title: t.title || cleanUrl(t.url), subtitle: cleanUrl(t.url), url: t.url, fill: t.url, tabId: t.tabId, windowId: t.windowId });
 const googleRow = (q) => ({ kind: 'google', title: q, subtitle: 'Google Search', url: googleUrl(q), fill: q });
+
+// ---------- Open tabs ----------
+
+// Open tabs, kept until a tab opens, closes, changes or is switched to.
+let tabsCache = null;
+for (const ev of [chrome.tabs.onCreated, chrome.tabs.onRemoved, chrome.tabs.onUpdated, chrome.tabs.onActivated,
+  chrome.tabs.onReplaced, chrome.tabs.onAttached, chrome.tabs.onDetached]) ev.addListener(() => { tabsCache = null; });
+
+// Every open page except the one you're on, as history-like entries, most recently used first.
+async function openTabs(tabId) {
+  const tabs = await (tabsCache ??= chrome.tabs.query({}));
+  const out = [];
+  for (const t of tabs) {
+    if (t.id === tabId || isBlank(t.url) || !t.url) continue;
+    const e = entry({ url: t.url, title: t.title, visitCount: 1, lastVisitTime: t.lastAccessed || 0 });
+    if (e && !e.search) out.push({ ...e, tabId: t.id, windowId: t.windowId });
+  }
+  return out.sort((a, b) => b.last - a.last);
+}
+
+// ---------- Building results ----------
 
 async function query(raw, tabId) {
   const q = raw.replace(/^\s+/, '').replace(/\s+/g, ' ');
@@ -264,17 +310,33 @@ async function query(raw, tabId) {
   const phrase = trimmed.toLowerCase();
   const terms = phrase.split(' ');
   const now = Date.now();
+  const [items, tabs] = await Promise.all([historyItems(trimmed), openTabs(tabId)]);
   const scored = [];
-  for (const e of await historyItems(trimmed)) {
+  for (const e of items) {
     const m = matchScore(terms, phrase, e);
     if (m) scored.push({ e, score: m + 0.8 * frecency(e, now) });
   }
+  // Open tabs that match rank with your history, a little ahead of it.
+  for (const t of tabs) {
+    const m = matchScore(terms, phrase, t);
+    if (m) scored.push({ e: t, score: m + 6 + 3 * Math.exp(-(now - t.last) / DAY) });
+  }
   scored.sort((a, b) => b.score - a.score);
+
+  // A page that's already open is switched to instead of opened a second time.
+  const openAt = new Map();
+  for (const t of tabs) if (!openAt.has(t.cl)) openAt.set(t.cl, t);
+  const asTab = (r) => {
+    if (r.kind !== 'page' && r.kind !== 'url') return r;
+    const t = openAt.get(cleanUrl(r.url).toLowerCase());
+    return t ? { ...tabRow(t), complete: r.complete } : r;
+  };
 
   const rows = [];
   const seen = new Set();
   const pages = new Map(); // address without its ?query -> row, so tracking or bot-check variants of a page don't pile up
-  const add = (r) => {
+  const add = (row) => {
+    const r = asTab(row);
     const key = r.kind === 'history' || r.kind === 'google' ? 's:' + r.title.toLowerCase() : 'u:' + cleanUrl(r.url).toLowerCase();
     if (seen.has(key)) return false;
     if (r.kind === 'page') {
@@ -297,21 +359,31 @@ async function query(raw, tabId) {
   };
   seen.add('s:' + phrase); // searching exactly what you typed is the Google row, below
 
-  // Typing what you'd normally type in the address bar: autofill it from history.
-  const fill = autofill(trimmed, phrase, scored.length ? scored.map((s) => s.e) : [], now);
-  if (fill) add(fill);
+  // A full address you typed that you've been to (or have open) goes first, exactly as typed: no autofill.
+  const typedUrl = looksLikeUrl(trimmed) ? cleanUrl(toUrl(trimmed)).toLowerCase() : null;
+  const exact = typedUrl && (openAt.get(typedUrl) || scored.find((s) => s.e.cl === typedUrl)?.e);
+  if (exact) add(exact.tabId ? tabRow(exact) : pageRow(exact));
 
-  // Everything else from your history: past searches and pages, best first.
+  // Otherwise, typing what you'd normally type in the address bar: autofill it from history. A site you
+  // have open ("you" -> youtube.com) switches to that tab.
+  const fill = !exact && autofill(trimmed, phrase, scored.filter((s) => !s.e.tabId).map((s) => s.e), now);
+  if (fill) {
+    const host = fill.kind === 'url' && fill.title;
+    const tab = host && tabs.find((t) => t.host === host);
+    add(tab ? { ...tabRow(tab), complete: fill.complete } : fill);
+  }
+
+  // Everything else: open tabs, past searches and pages, best first.
   const max = 5;
   for (const { e } of scored) {
     if (rows.length >= max) break;
-    add(e.search ? searchRow(e) : pageRow(e));
+    add(e.tabId ? tabRow(e) : e.search ? searchRow(e) : pageRow(e));
   }
 
-  if (looksLikeUrl(trimmed)) {
+  if (typedUrl) {
     const url = toUrl(trimmed);
     const row = { kind: 'url', title: trimmed, subtitle: 'Open address', url, fill: trimmed };
-    if (add(row) && !fill) rows.unshift(rows.pop()); // a typed address with nothing to fill opens first
+    if (add(row) && !fill && !exact) rows.unshift(rows.pop()); // a typed address with nothing to fill opens first
   }
 
   // And always: search Google for it.
@@ -319,25 +391,44 @@ async function query(raw, tabId) {
   return rows;
 }
 
-// With nothing typed: your most recent searches and pages (not counting the page you're on).
+// With nothing typed: a few tabs you were just on, then your most recent searches and pages.
 async function recent(tabId) {
-  const [items, here] = await Promise.all([
+  const [items, tabs, here] = await Promise.all([
     chrome.history.search({ text: '', startTime: 0, maxResults: 80 }),
+    openTabs(tabId),
     tabId != null ? chrome.tabs.get(tabId).catch(() => null) : null
   ]);
   const rows = [];
   const seen = new Set(here?.url ? ['u:' + cleanUrl(here.url).toLowerCase()] : []);
+  for (const t of tabs.slice(0, 3)) {
+    seen.add('u:' + t.cl);
+    rows.push(tabRow(t));
+  }
+  const openAt = new Map(tabs.map((t) => [t.cl, t]));
   for (const h of items) {
+    if (rows.length >= 7) break;
     const e = entry(h);
     if (!e) continue;
-    const r = e.search ? searchRow(e) : pageRow(e);
     const key = e.search ? 's:' + e.tl : 'u:' + e.cl;
     if (seen.has(key)) continue;
     seen.add(key);
-    rows.push(r);
-    if (rows.length >= 7) break;
+    rows.push(e.search ? searchRow(e) : openAt.has(e.cl) ? tabRow(openAt.get(e.cl)) : pageRow(e));
   }
   return rows;
+}
+
+// Shift+Delete: forget a past search (every time you searched it) or a page.
+async function remove(row) {
+  if (!row?.removable) return false;
+  let urls = [row.url];
+  if (row.kind === 'history') {
+    const q = row.title.toLowerCase();
+    const pool = index ? [...index.values()] : (await chrome.history.search({ text: row.title, startTime: 0, maxResults: 500 })).map(entry).filter(Boolean);
+    urls = pool.filter((e) => e.search && e.search.q.toLowerCase() === q && e.search.engine === row.engine).map((e) => e.url);
+  }
+  await Promise.all(urls.map((url) => chrome.history.deleteUrl({ url })));
+  urls.forEach((u) => index?.delete(u));
+  return true;
 }
 
 // ---------- Google suggestions ----------

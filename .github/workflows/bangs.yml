@@ -1,0 +1,44 @@
+# Keeps the bundled bang list (data/bangs.json) in step with Helium's. Once a week it rebuilds the list from
+# Helium's servers and, if anything changed, opens a pull request. argon also refreshes the list in the browser
+# every few days, so this only keeps fresh installs and offline use current.
+name: Refresh bangs
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays, 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Rebuild data/bangs.json from Helium's list
+        run: node scripts/build-bangs.js
+
+      - name: Open a pull request if it changed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet -- data/bangs.json; then
+            echo "Bang list unchanged."
+            exit 0
+          fi
+          count=$(node -e "const d=require('./data/bangs.json');console.log(Object.keys(d.t).length)")
+          branch="bangs/$(date -u +%Y-%m-%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "Refresh bangs from Helium ($count triggers)"
+          git push -u origin "$branch"
+          gh pr create --title "Refresh bangs from Helium" \
+            --body "Helium's bang list changed. This rebuilds \`data/bangs.json\` with \`node scripts/build-bangs.js\` ($count triggers)."
