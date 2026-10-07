@@ -29,6 +29,7 @@
     answer: svg('<rect x="4.25" y="3.25" width="11.5" height="13.5" rx="2.25"/><path d="M7 6.5h6M7.25 10h.01M10 10h.01M12.75 10h.01M7.25 13h.01M10 13h.01M12.75 13h.01"/>'),
     enter: svg('<path d="M15.5 4.5v5.25a2 2 0 0 1-2 2H5"/><path d="m7.75 8.5-3 3.25 3 3.25"/>')
   };
+  const MAX_ROWS = 7; // the palette is exactly this many rows tall
   const ACTION = { google: 'Search Google', suggest: 'Search', history: 'Search', page: 'Open', url: 'Open', answer: 'Search Google' };
 
   const CSS = `
@@ -60,7 +61,7 @@
 /* Dead center, at a fixed height, so the field never moves as results come and go. */
 .panel {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  width: min(680px, calc(100vw - 32px)); height: min(456px, calc(100vh - 32px));
+  width: min(680px, calc(100vw - 32px)); height: min(367px, calc(100vh - 32px)); /* the field + exactly 7 rows */
   display: flex; flex-direction: column;
   background: var(--panel); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden;
   backdrop-filter: blur(36px) saturate(1.8); -webkit-backdrop-filter: blur(36px) saturate(1.8);
@@ -102,7 +103,7 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
 /* The toolbar popup: no backdrop, the panel is the whole window. */
 .root.popup .panel { position: static; transform: none; width: 640px; height: auto; border-radius: 0; box-shadow: none;
   background: var(--panel-solid); backdrop-filter: none; }
-.root.popup .list { flex: none; max-height: 440px; }
+.root.popup .list { flex: none; }
 .root.popup .list:empty { display: none; }
 `;
 
@@ -244,8 +245,8 @@ input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent
     });
     // A calculator answer goes right under the Google search.
     const answer = extra.filter((r) => r.kind === 'answer');
-    const rest = extra.filter((r) => r.kind !== 'answer').slice(0, Math.max(3, 11 - local.length));
-    return [...local, ...answer, ...rest];
+    const rest = extra.filter((r) => r.kind !== 'answer');
+    return [...local, ...answer, ...rest].slice(0, MAX_ROWS);
   }
 
   function show(keepSel) {
