@@ -273,9 +273,24 @@ async function query(raw, tabId) {
 
   const rows = [];
   const seen = new Set();
+  const pages = new Map(); // address without its ?query -> row, so tracking or bot-check variants of a page don't pile up
   const add = (r) => {
     const key = r.kind === 'history' || r.kind === 'google' ? 's:' + r.title.toLowerCase() : 'u:' + cleanUrl(r.url).toLowerCase();
     if (seen.has(key)) return false;
+    if (r.kind === 'page') {
+      const path = cleanUrl(r.url.replace(/[?#].*$/, '')).toLowerCase();
+      const same = pages.get(path);
+      if (same) {
+        // Keep the plainer address of the two.
+        if (r.url.length < same.url.length) {
+          rows[rows.indexOf(same)] = r;
+          pages.set(path, r);
+          seen.add(key);
+        }
+        return false;
+      }
+      pages.set(path, r);
+    }
     seen.add(key);
     rows.push(r);
     return true;
