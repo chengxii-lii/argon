@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welcome to argon</title>
+<link rel="icon" href="../icons/icon32.png">
+<style>
+  :root {
+    --bg: #f4f4f5; --card: #fff; --text: #1d1d1f; --muted: #6e6e73; --line: rgba(0,0,0,.08);
+    --accent: #17786f; --ok: #17786f; --warn: #b4610e; --key: #f4f4f5;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161719; --card: #1f2023; --text: #f2f2f4; --muted: #9b9ba1; --line: rgba(255,255,255,.09);
+      --accent: #1f8a7f; --ok: #3cc2b3; --warn: #f0a24a; --key: #2a2b2f; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", sans-serif;
+    display: grid; place-items: center; padding: 48px 16px; -webkit-font-smoothing: antialiased; }
+  main { width: min(560px, 100%); }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+  header img { width: 48px; height: 48px; }
+  h1 { font-size: 26px; letter-spacing: -0.02em; margin: 0; font-weight: 650; }
+  header p { margin: 2px 0 0; color: var(--muted); }
+  .card { background: var(--card); border-radius: 14px; box-shadow: 0 0 0 1px var(--line); padding: 22px 24px; margin-bottom: 16px; }
+  h2 { font-size: 15px; margin: 0 0 6px; font-weight: 620; }
+  .card p { margin: 0; color: var(--muted); }
+  ol { margin: 12px 0 0; padding-left: 20px; color: var(--muted); }
+  ol li { margin: 4px 0; }
+  .status { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-weight: 550; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); flex: none; }
+  .status.ok .dot { background: var(--ok); }
+  .status.ok { color: var(--ok); }
+  .status:not(.ok) { color: var(--warn); }
+  button { font: inherit; font-weight: 560; border: 0; border-radius: 9px; padding: 9px 16px; margin-top: 16px;
+    background: var(--accent); color: #fff; cursor: pointer; }
+  button:hover { filter: brightness(1.08); }
+  kbd { font: 12.5px/1 ui-monospace, "Cascadia Code", Consolas, monospace; background: var(--key); border-radius: 5px;
+    padding: 3px 6px; box-shadow: inset 0 -1px 0 var(--line), 0 0 0 1px var(--line); color: var(--text); white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  td { padding: 7px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  td:first-child { width: 42%; white-space: nowrap; }
+  tr:first-child td { border-top: 0; }
+  td:last-child { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="../icons/icon128.png" alt="">
+    <div>
+      <h1>argon</h1>
+      <p>Ctrl+T opens a command palette right on the page you're on.</p>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>Set Ctrl+T</h2>
+    <p>Browsers don't let an extension take Ctrl+T on its own, so it's one quick step:</p>
+    <ol>
+      <li>Open the shortcuts page with the button below.</li>
+      <li>Find <b>argon</b> → “Open the palette” and click the pencil.</li>
+      <li>Press <kbd>Ctrl</kbd> <kbd>T</kbd>. If another extension already uses it, clear that one first.</li>
+    </ol>
+    <div class="status" id="status"><span class="dot"></span><span id="status-text">Checking…</span></div>
+    <button id="shortcuts" type="button">Open shortcuts page</button>
+  </section>
+
+  <section class="card">
+    <h2>Using the palette</h2>
+    <table>
+      <tr><td><kbd>Tab</kbd> / <kbd>Shift</kbd> <kbd>Tab</kbd></td><td>Move through suggestions (also <kbd>↑</kbd> <kbd>↓</kbd>)</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Open in a new tab, like Ctrl+T used to</td></tr>
+      <tr><td><kbd>Shift</kbd> <kbd>Enter</kbd></td><td>Open in this tab</td></tr>
+      <tr><td><kbd>Ctrl</kbd> <kbd>Enter</kbd></td><td>Open in a background tab</td></tr>
+      <tr><td><kbd>Alt</kbd> <kbd>Enter</kbd></td><td>Search Google for exactly what you typed</td></tr>
+      <tr><td><kbd>→</kbd></td><td>Accept the autofill</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Close</td></tr>
+      <tr><td><kbd>!yt</kbd> cats · cats <kbd>!w</kbd></td><td>Helium's !bangs, all 13,000 of them</td></tr>
+    </table>
+  </section>
+</main>
+<script src="welcome.js"></script>
+</body>
+</html>
