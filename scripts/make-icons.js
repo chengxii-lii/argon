@@ -41,7 +41,7 @@ const sdSegment = (px, py, ax, ay, bx, by) => {
 function render(size) {
   const out = Buffer.alloc(size * size * 4);
   const ss = 4; // supersampling
-  const top = [52, 196, 180], bottom = [20, 112, 103];
+  const top = [72, 102, 232], bottom = [40, 62, 196]; // around Helium's logo blue, #3450d1
   const stroke = size <= 16 ? 0.105 : size <= 32 ? 0.09 : 0.08;
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {

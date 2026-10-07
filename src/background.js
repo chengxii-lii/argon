@@ -33,19 +33,23 @@ chrome.runtime.onConnect.addListener((port) => {
 
 async function toggle(tab) {
   if (!tab) return;
-  warm(); // start loading history while the palette appears
   if (popups.size) return popups.forEach((p) => p.postMessage({ type: 'close' }));
 
-  // Already in the page (it's loaded on every page as it starts): just toggle it.
-  if (await chrome.tabs.sendMessage(tab.id, { type: 'toggle' }, { frameId: 0 }).catch(() => false)) return;
+  // Already in the page (it's loaded on every page as it starts): just toggle it. Nothing else runs first.
+  const reply = await chrome.tabs.sendMessage(tab.id, { type: 'toggle' }, { frameId: 0 }).catch(() => null);
+  warm(); // load history while you start typing
+  if (reply === 'ok') return;
 
-  try {
-    // Pages opened before argon was installed or updated don't have it yet.
-    await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, files: [PALETTE_FILE] });
-    if (await chrome.tabs.sendMessage(tab.id, { type: 'toggle' }, { frameId: 0 }).catch(() => false)) return;
-  } catch { /* the browser's own pages, the Web Store and PDFs can't be drawn on by any extension */ }
+  // Pages opened before argon was installed or updated don't have it yet: inject it, and it opens itself.
+  if (reply !== 'nofocus') {
+    try {
+      const [res] = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, files: [PALETTE_FILE] });
+      if (res?.result === true) return;
+    } catch { /* the browser's own pages, the Web Store and PDFs can't be drawn on by any extension */ }
+  }
 
-  // Drop the palette down from the toolbar instead.
+  // Drop the palette down from the toolbar instead. Also used when focus is in the address bar, since no page
+  // can take keyboard focus from there.
   await chrome.action.setPopup({ tabId: tab.id, popup: `${POPUP}?tab=${tab.id}` });
   try {
     await chrome.action.openPopup({ windowId: tab.windowId });

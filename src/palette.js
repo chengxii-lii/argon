@@ -3,7 +3,7 @@
 (() => {
   const old = window.__argon;
   if (old) {
-    if (old.alive()) return;
+    if (old.alive()) return old.toggle();
     old.destroy(); // a copy left over from before argon was reloaded can't reach argon anymore
   }
   const alive = () => { try { return !!chrome.runtime?.id; } catch { return false; } };
@@ -35,7 +35,7 @@
 :host { all: initial; }
 * { box-sizing: border-box; }
 .root {
-  --accent: #17786f; --on-accent: #fff;
+  --accent: #3450d1; --on-accent: #fff;
   --panel: rgba(250, 250, 251, 0.84); --panel-solid: #f6f6f7;
   --text: #1d1d1f; --muted: #6e6e73; --faint: #a1a1a6;
   --line: rgba(0, 0, 0, 0.08); --hover: rgba(0, 0, 0, 0.045); --tile: rgba(0, 0, 0, 0.05);
@@ -47,7 +47,7 @@
 }
 @media (prefers-color-scheme: dark) {
   .root {
-    --accent: #1f8a7f; --on-accent: #fff;
+    --accent: #3a57dc; --on-accent: #fff;
     --panel: rgba(30, 31, 34, 0.8); --panel-solid: #1f2023;
     --text: #f2f2f4; --muted: #9b9ba1; --faint: #6c6c72;
     --line: rgba(255, 255, 255, 0.09); --hover: rgba(255, 255, 255, 0.06); --tile: rgba(255, 255, 255, 0.07);
@@ -56,19 +56,17 @@
     color-scheme: dark;
   }
 }
-.backdrop { position: fixed; inset: 0; background: var(--dim); animation: fade 120ms ease-out; }
+.backdrop { position: fixed; inset: 0; background: var(--dim); }
+/* Dead center, at a fixed height, so the field never moves as results come and go. */
 .panel {
-  position: fixed; left: 50%; top: max(12vh, 24px); transform: translateX(-50%);
-  width: min(680px, calc(100vw - 32px));
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(680px, calc(100vw - 32px)); height: min(456px, calc(100vh - 32px));
+  display: flex; flex-direction: column;
   background: var(--panel); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden;
   backdrop-filter: blur(36px) saturate(1.8); -webkit-backdrop-filter: blur(36px) saturate(1.8);
-  animation: rise 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-@keyframes fade { from { opacity: 0; } }
-@keyframes rise { from { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.985); } }
-@media (prefers-reduced-motion: reduce) { .backdrop, .panel { animation: none; } }
 
-.field { display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 20px; }
+.field { display: flex; align-items: center; gap: 12px; height: 60px; flex: none; padding: 0 20px; }
 .field > svg { width: 20px; height: 20px; flex: none; color: var(--muted); }
 input {
   all: unset; flex: 1; min-width: 0; height: 100%;
@@ -76,11 +74,10 @@ input {
   caret-color: var(--accent);
 }
 input::placeholder { color: var(--faint); }
-input::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); color: var(--text); }
+input::selection { background: color-mix(in srgb, var(--accent) 38%, transparent); color: var(--text); }
 
-.list { list-style: none; margin: 0; padding: 6px; border-top: 1px solid var(--line);
-  max-height: min(480px, calc(100vh - 12vh - 120px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-.list:empty { display: none; }
+.list { list-style: none; margin: 0; padding: 6px; border-top: 1px solid var(--line); flex: 1; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .row {
   display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 12px 0 10px;
   border-radius: 10px; cursor: default; user-select: none; white-space: nowrap;
@@ -103,9 +100,10 @@ input::selection { background: color-mix(in srgb, var(--accent) 28%, transparent
 .row.sel .action { display: flex; }
 
 /* The toolbar popup: no backdrop, the panel is the whole window. */
-.root.popup .panel { position: static; transform: none; width: 640px; border-radius: 0; box-shadow: none;
-  background: var(--panel-solid); backdrop-filter: none; animation: none; }
-.root.popup .list { max-height: 440px; }
+.root.popup .panel { position: static; transform: none; width: 640px; height: auto; border-radius: 0; box-shadow: none;
+  background: var(--panel-solid); backdrop-filter: none; }
+.root.popup .list { flex: none; max-height: 440px; }
+.root.popup .list:empty { display: none; }
 `;
 
   // ---------- DOM ----------
@@ -341,7 +339,14 @@ input::selection { background: color-mix(in srgb, var(--accent) 28%, transparent
   // Registered on the window before the page's own listeners (argon loads as the page starts), so pages with
   // single-key shortcuts (YouTube, GitHub, Gmail) never see what you type into the palette.
   function onKey(e) {
-    if (!isOpen || (!IN_POPUP && !e.composedPath().includes(host))) return;
+    if (!isOpen) return;
+    // Esc always closes, even if the page managed to pull focus away from the palette.
+    if (e.key === 'Escape' && e.type === 'keydown' && !e.isComposing) {
+      e.preventDefault();
+      if (!IN_POPUP) e.stopImmediatePropagation();
+      return close(false);
+    }
+    if (!IN_POPUP && !e.composedPath().includes(host)) return;
     if (e.type === 'keydown') handleKey(e);
     if (!IN_POPUP) e.stopImmediatePropagation();
   }
@@ -415,12 +420,6 @@ input::selection { background: color-mix(in srgb, var(--accent) 28%, transparent
     remote = [];
     rows = [];
     list.replaceChildren();
-    // Re-run the entry animation each time.
-    for (const el of root.querySelectorAll('.backdrop, .panel')) {
-      el.style.animation = 'none';
-      void el.offsetWidth;
-      el.style.animation = '';
-    }
     input.focus({ preventScroll: true });
     update();
   }
@@ -439,7 +438,14 @@ input::selection { background: color-mix(in srgb, var(--accent) 28%, transparent
     lastFocus = null;
   }
 
-  const toggle = () => (isOpen ? close(false) : open());
+  // Returns false when the page doesn't have keyboard focus (you pressed Ctrl+T in the address bar): no page can
+  // take focus from the browser's toolbar, so argon drops the palette from the toolbar icon instead.
+  function toggle() {
+    if (isOpen) { close(false); return true; }
+    if (!IN_POPUP && !document.hasFocus()) return false;
+    open();
+    return true;
+  }
 
   // ---------- Wiring ----------
 
@@ -448,8 +454,7 @@ input::selection { background: color-mix(in srgb, var(--accent) 28%, transparent
 
   function onMessage(msg, _sender, reply) {
     if (msg?.type !== 'toggle') return;
-    toggle();
-    reply(true);
+    reply(toggle() ? 'ok' : 'nofocus');
   }
   if (!IN_POPUP) chrome.runtime.onMessage.addListener(onMessage);
 
@@ -475,5 +480,9 @@ input::selection { background: color-mix(in srgb, var(--accent) 28%, transparent
     // A second Ctrl+T closes the popup.
     chrome.runtime.connect({ name: 'popup' }).onMessage.addListener((m) => m.type === 'close' && window.close());
     open();
+    return true;
   }
+  // Loaded with the page (as it starts loading): wait for Ctrl+T. Injected later by Ctrl+T itself, on a page
+  // that was open before argon was installed: open right away, in the same step.
+  return document.readyState === 'loading' ? true : toggle();
 })();
