@@ -39,7 +39,7 @@
       "description": "Open the palette (set this to Ctrl+T)"
     },
     "close-tab": {
-      "description": "Close tab, but never your last one (set this to Ctrl+W)"
+      "description": "Close tab, but never a pinned or last one (set this to Ctrl+W)"
     }
   },
   "chrome_url_overrides": {

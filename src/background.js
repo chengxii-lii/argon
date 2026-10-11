@@ -12,13 +12,14 @@ const isBlank = (url = '') =>
 
 // ---------- Opening the palette ----------
 
-chrome.commands.onCommand.addListener(async (cmd, tab) => {
+chrome.commands.onCommand.addListener(onShortcut);
+async function onShortcut(cmd, tab) {
   tab ??= (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
-  if (cmd === 'close-tab') return closeTab(tab);
+  if (cmd === 'close-tab') return tab?.pinned ? undefined : closeTab(tab); // pinned tabs are safe from Ctrl+W
   if (cmd !== 'open-palette') return;
   toggle(tab);
   saveShortcut();
-});
+}
 
 // Ctrl+W (once you bind it to argon): closing the last tab of your last window would quit Helium, so you land on
 // argon's new tab instead, and that one stays put. Every other tab closes as usual.

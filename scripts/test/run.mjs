@@ -308,6 +308,13 @@ try {
     await sleep(300);
     tabs = await b.background(`chrome.tabs.query({}).then((ts) => ts.map((t) => t.pendingUrl || t.url))`);
     check(tabs.length === 1, 'and that new tab stays put', tabs);
+    // A pinned tab ignores Ctrl+W.
+    const pin = await b.background(`chrome.tabs.create({ url: 'about:blank', pinned: true }).then((t) => t.id)`);
+    await sleep(300);
+    await b.background(`chrome.tabs.get(${pin}).then((t) => onShortcut('close-tab', t))`);
+    await sleep(300);
+    check(await b.background(`chrome.tabs.get(${pin}).then(() => true, () => false)`), 'a pinned tab stays open');
+    await b.background(`chrome.tabs.remove(${pin})`);
     // Same in a second window: Ctrl+W never closes a window.
     const win = await b.background(`chrome.windows.create({ url: 'chrome://newtab/' }).then((w) => w.id)`);
     await sleep(600);
